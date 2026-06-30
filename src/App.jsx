@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react"
 import { sb, EID, dbIns, dbUpd, dbDel } from "./supabase.js"
+import { exportExcel, exportPDF } from "./export.js"
 
 const C = {
   bg:"#F7F8FA",surface:"#FFFFFF",border:"#E8EAF0",
@@ -73,13 +74,13 @@ const BarPct = ({val,max}) => {
 }
 const Stars = ({n}) => <span style={{color:C.amber}}>{Array.from({length:5},(_,i)=>i<n?"★":"☆").join("")}</span>
 const KCard = ({label,value,sub,color=C.text,icon,bg}) =>
-  <div style={{background:bg||C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"16px 18px",display:"flex",flexDirection:"column",gap:4}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-      <span style={{fontSize:12,color:C.muted,fontWeight:500}}>{label}</span>
-      {icon&&<span style={{fontSize:18}}>{icon}</span>}
+  <div style={{background:bg||C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"16px 18px",display:"flex",flexDirection:"column",gap:4,minWidth:0,overflow:"hidden"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+      <span style={{fontSize:12,color:C.muted,fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{label}</span>
+      {icon&&<span style={{fontSize:16,flexShrink:0}}>{icon}</span>}
     </div>
-    <div style={{fontSize:24,fontWeight:800,color,lineHeight:1.1}}>{value}</div>
-    {sub&&<div style={{fontSize:12,color:C.muted}}>{sub}</div>}
+    <div style={{fontSize:"clamp(15px,2.1vw,24px)",fontWeight:800,color,lineHeight:1.15,overflowWrap:"break-word",wordBreak:"break-word"}}>{value}</div>
+    {sub&&<div style={{fontSize:11,color:C.muted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</div>}
   </div>
 const Spinner = () =>
   <div style={{display:"flex",alignItems:"center",justifyContent:"center",padding:48,flexDirection:"column",gap:12}}>
@@ -133,6 +134,11 @@ const Section = ({title,action,children}) =>
     </div>
     {children}
   </div>
+const ExportBtns = ({filename,title,columns,rows}) =>
+  <div style={{display:"flex",gap:6}}>
+    <button onClick={()=>exportExcel(filename,columns,rows)} title="Exportar Excel" style={{display:"flex",alignItems:"center",gap:5,background:C.greenLight,color:C.green,border:`1px solid ${C.greenMid}`,borderRadius:7,padding:"5px 10px",cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:700}}>📊 Excel</button>
+    <button onClick={()=>exportPDF(filename,title,columns,rows)} title="Exportar PDF" style={{display:"flex",alignItems:"center",gap:5,background:C.redLight,color:C.red,border:`1px solid ${C.redMid}`,borderRadius:7,padding:"5px 10px",cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:700}}>📄 PDF</button>
+  </div>
 const Th = ({children}) => <th style={{padding:"9px 14px",textAlign:"left",fontSize:11,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:"0.06em",background:C.bg,whiteSpace:"nowrap"}}>{children}</th>
 const Td = ({children,style:s}) => <td style={{padding:"11px 14px",...s}}>{children}</td>
 const MFoot = ({onCancel,onSave,saving,label="Salvar"}) =>
@@ -174,20 +180,13 @@ function ViewDashboard({user}) {
       <div><div style={{fontSize:20,fontWeight:800,marginBottom:4}}>Bom dia, {user?.nome?.split(" ")[0]||"Usuário"} 👋</div><div style={{fontSize:13,opacity:.8}}>{fmtD(TODAY)} · MetalTech Indústria · Betim/MG</div></div>
       <div style={{textAlign:"right"}}><div style={{fontSize:12,opacity:.8}}>Saldo projetado</div><div style={{fontSize:22,fontWeight:800}}>{fmtR(totalReceber-totalPagar)}</div></div>
     </div>
-    <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:"0.08em"}}>Produção</div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(148px,1fr))",gap:10}}>
+    <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:"0.08em"}}>Visão Geral</div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10}}>
       <KCard label="Em Produção" value={emProd} sub={`${ordens.length} total`} color={C.accent} icon="📋"/>
       <KCard label="Atrasadas" value={atrasadas} color={atrasadas>0?C.red:C.green} icon="⚠️" bg={atrasadas>0?C.redLight:C.surface}/>
       <KCard label="Eficiência" value={`${efGeral}%`} color={efGeral>80?C.red:C.green} icon="⚙️"/>
-      <KCard label="Produzido Hoje" value={fmt(prodHoje)} sub="peças" color={C.text} icon="📦"/>
-      <KCard label="Refugo Hoje" value={refugoHoje} color={refugoHoje>5?C.amber:C.green} icon="🗑️"/>
       <KCard label="NC Qualidade" value={qualNC} color={qualNC>0?C.red:C.green} icon="🔍"/>
-    </div>
-    <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:"0.08em"}}>Gestão</div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(148px,1fr))",gap:10}}>
       <KCard label="Estoque Alerta" value={stockAlerta} color={stockAlerta>0?C.amber:C.green} icon="📦" bg={stockAlerta>0?C.amberLight:C.surface}/>
-      <KCard label="Valor Estoque" value={fmtR(valorEstoque)} color={C.text} icon="💰"/>
-      <KCard label="Pedidos Compra" value={pedidosAbertos} sub="em aberto" color={C.teal} icon="🛒"/>
       <KCard label="A Pagar" value={fmtR(totalPagar)} color={C.red} icon="📤"/>
       <KCard label="A Receber" value={fmtR(totalReceber)} color={C.green} icon="📥"/>
       <KCard label="Funcionários" value={funcs.filter(f=>f.ativo).length} sub="ativos" color={C.text} icon="👤"/>
@@ -250,7 +249,11 @@ function ViewOrdens({showToast}) {
       <Btn onClick={openNew}>+ Nova Ordem</Btn>
     </div>
     <Tabs tabs={["todos","planejada","em_producao","atrasada","concluida"].map(k=>({key:k,label:`${{todos:"Todas",planejada:"Planejadas",em_producao:"Em Produção",atrasada:"Atrasadas",concluida:"Concluídas"}[k]} (${cnt(k)})`}))} active={tab} onChange={setTab}/>
-    <Section title={`${list.length} ordens`}>
+    <Section title={`${list.length} ordens`} action={<ExportBtns filename="ordens-producao" title="Ordens de Produção" columns={[
+      {label:"Código",get:o=>o.codigo},{label:"Produto",get:o=>o.produto},{label:"Centro",get:o=>o.centro},
+      {label:"Quantidade",get:o=>o.quantidade},{label:"Produzido",get:o=>o.produzido},{label:"Prioridade",get:o=>o.prioridade},
+      {label:"Status",get:o=>(STATUS_OP[o.status]||{label:o.status}).label},{label:"Entrega",get:o=>fmtD(o.data_entrega)},
+    ]} rows={list}/>}>
       <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:900}}>
         <thead><tr><Th>Código</Th><Th>Produto</Th><Th>Centro</Th><Th>Progresso</Th><Th>Prioridade</Th><Th>Status</Th><Th>Entrega</Th><Th></Th></tr></thead>
         <tbody>
@@ -324,7 +327,10 @@ function ViewFinanceiro({showToast}) {
       </div></Section>
     </div>}
     {tab==="pagar"&&<><div style={{display:"flex",justifyContent:"flex-end"}}><Btn onClick={()=>{setForm({});setModal("pagar")}}>+ Nova Conta</Btn></div>
-      <Section title={`${pagar.length} contas`}><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+      <Section title={`${pagar.length} contas`} action={<ExportBtns filename="contas-pagar" title="Contas a Pagar" columns={[
+        {label:"Descrição",get:c=>c.descricao},{label:"Fornecedor",get:c=>c.fornecedor||"—"},{label:"Categoria",get:c=>c.categoria},
+        {label:"Valor",get:c=>fmtR(c.valor)},{label:"Vencimento",get:c=>fmtD(c.vencimento)},{label:"Status",get:c=>(STATUS_FIN[c.status]||{label:c.status}).label},
+      ]} rows={pagar}/>}><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr><Th>Descrição</Th><Th>Fornecedor</Th><Th>Valor</Th><Th>Vencimento</Th><Th>Status</Th><Th></Th></tr></thead>
         <tbody>{pagar.map((c,i)=><tr key={c.id} style={{borderTop:`1px solid ${C.border}`,background:i%2?C.bg:C.surface}}>
           <Td style={{fontWeight:600}}>{c.descricao}</Td><Td style={{color:C.muted}}>{c.fornecedor||"—"}</Td>
@@ -335,7 +341,10 @@ function ViewFinanceiro({showToast}) {
         </tr>)}</tbody>
       </table></div></Section></>}
     {tab==="receber"&&<><div style={{display:"flex",justifyContent:"flex-end"}}><Btn onClick={()=>{setForm({});setModal("receber")}}>+ Nova Conta</Btn></div>
-      <Section title={`${receber.length} contas`}><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+      <Section title={`${receber.length} contas`} action={<ExportBtns filename="contas-receber" title="Contas a Receber" columns={[
+        {label:"Descrição",get:c=>c.descricao},{label:"Cliente",get:c=>c.cliente||"—"},{label:"Categoria",get:c=>c.categoria},
+        {label:"Valor",get:c=>fmtR(c.valor)},{label:"Vencimento",get:c=>fmtD(c.vencimento)},{label:"Status",get:c=>(STATUS_FIN[c.status]||{label:c.status}).label},
+      ]} rows={receber}/>}><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
         <thead><tr><Th>Descrição</Th><Th>Cliente</Th><Th>Valor</Th><Th>Vencimento</Th><Th>Status</Th><Th></Th></tr></thead>
         <tbody>{receber.map((c,i)=><tr key={c.id} style={{borderTop:`1px solid ${C.border}`,background:i%2?C.bg:C.surface}}>
           <Td style={{fontWeight:600}}>{c.descricao}</Td><Td style={{color:C.muted}}>{c.cliente||"—"}</Td>
@@ -498,7 +507,11 @@ function ViewEstoque({showToast}){
     </div>
     <Tabs tabs={[{key:"estoque",label:"Estoque"},{key:"movimentacoes",label:"Movimentações"},{key:"alertas",label:`Alertas (${alertas.length})`}]} active={tab} onChange={setTab}/>
     {tab==="estoque"&&<><div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Btn variant="ghost" onClick={()=>setMovModal(true)}>+ Movimentação</Btn><Btn onClick={openNew}>+ Novo Item</Btn></div>
-      <Section title={`${estoque.length} itens`}><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:900}}>
+      <Section title={`${estoque.length} itens`} action={<ExportBtns filename="estoque-mp" title="Estoque de Matéria-Prima" columns={[
+        {label:"Código",get:e=>e.codigo},{label:"Descrição",get:e=>e.descricao},{label:"Categoria",get:e=>e.categoria},
+        {label:"Saldo",get:e=>e.saldo},{label:"Mínimo",get:e=>e.minimo},{label:"Máximo",get:e=>e.maximo},
+        {label:"Custo Unit.",get:e=>fmtR(e.custo_unit)},{label:"Valor Total",get:e=>fmtR(e.saldo*e.custo_unit)},
+      ]} rows={estoque}/>}><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:900}}>
         <thead><tr><Th>Código</Th><Th>Descrição</Th><Th>Categoria</Th><Th>Saldo</Th><Th>Mín/Máx</Th><Th>Custo</Th><Th>Valor</Th><Th>Status</Th><Th>Ult. Entrada</Th><Th></Th></tr></thead>
         <tbody>{estoque.map((e,i)=>{const s=sSaldo(e);return<tr key={e.id} style={{borderTop:`1px solid ${C.border}`,background:i%2?C.bg:C.surface}}>
           <Td><span style={{fontWeight:800,color:C.accent,fontSize:12}}>{e.codigo}</span></Td>
@@ -631,7 +644,12 @@ function ViewCompras({showToast}){
 
     {tab==="pedidos"&&<>
       <div style={{display:"flex",justifyContent:"flex-end"}}><Btn onClick={()=>{setForm({status:"enviado"});setModal("pedido");}}>+ Novo Pedido</Btn></div>
-      <Section title={`${pedidos.length} pedidos`}><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:900}}>
+      <Section title={`${pedidos.length} pedidos`} action={<ExportBtns filename="pedidos-compra" title="Pedidos de Compra" columns={[
+        {label:"Número",get:p=>p.numero},{label:"Descrição",get:p=>p.descricao},
+        {label:"Fornecedor",get:p=>fornecedores.find(f=>f.id===p.fornecedor_id)?.razao_social||"—"},
+        {label:"Quantidade",get:p=>p.quantidade},{label:"Valor Total",get:p=>fmtR(p.valor_total||p.quantidade*p.valor_unit)},
+        {label:"Previsão",get:p=>fmtD(p.previsao_entrega)},{label:"Status",get:p=>(STATUS_PC[p.status]||{label:p.status}).label},
+      ]} rows={pedidos}/>}><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:900}}>
         <thead><tr><Th>Número</Th><Th>Descrição</Th><Th>Fornecedor</Th><Th>Qtd</Th><Th>Valor Total</Th><Th>Previsão</Th><Th>Status</Th><Th>Ações</Th></tr></thead>
         <tbody>{pedidos.map((p,i)=>{const forn=fornecedores.find(f=>f.id===p.fornecedor_id);return<tr key={p.id} style={{borderTop:`1px solid ${C.border}`,background:i%2?C.bg:C.surface}}>
           <Td><span style={{fontWeight:800,color:C.teal,fontSize:12}}>{p.numero}</span></Td>
@@ -747,7 +765,11 @@ function ViewRH({showToast}){
 
     {tab==="funcionarios"&&<>
       <div style={{display:"flex",justifyContent:"flex-end"}}><Btn onClick={()=>{setForm({turno:"manhã",ativo:true});setModal("func");}}>+ Novo Funcionário</Btn></div>
-      <Section title={`${funcs.length} funcionários`}><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:800}}>
+      <Section title={`${funcs.length} funcionários`} action={<ExportBtns filename="funcionarios" title="Funcionários" columns={[
+        {label:"Matrícula",get:f=>f.matricula},{label:"Nome",get:f=>f.nome},{label:"Cargo",get:f=>f.cargo},
+        {label:"Centro",get:f=>f.centro},{label:"Turno",get:f=>f.turno},{label:"Salário",get:f=>fmtR(f.salario)},
+        {label:"Status",get:f=>f.ativo?"Ativo":"Inativo"},
+      ]} rows={funcs}/>}><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:800}}>
         <thead><tr><Th>Matrícula</Th><Th>Nome</Th><Th>Cargo</Th><Th>Centro</Th><Th>Turno</Th><Th>Salário</Th><Th>Status</Th></tr></thead>
         <tbody>{funcs.map((f,i)=><tr key={f.id} style={{borderTop:`1px solid ${C.border}`,background:i%2?C.bg:C.surface}}>
           <Td><span style={{fontWeight:800,color:C.accent,fontSize:12}}>{f.matricula}</span></Td>
@@ -1219,7 +1241,11 @@ function ViewVendas({ showToast }) {
     {/* ── PEDIDOS DE VENDA ─────────────────────────────────────────── */}
     {tab === "pedidos" && <>
       <div style={{ display: "flex", justifyContent: "flex-end" }}><Btn onClick={openNewPedido}>+ Novo Pedido</Btn></div>
-      <Section title={`${pedidos.length} pedidos`}>
+      <Section title={`${pedidos.length} pedidos`} action={<ExportBtns filename="pedidos-venda" title="Pedidos de Venda" columns={[
+        {label:"Número",get:p=>p.numero},{label:"Cliente",get:p=>clientes.find(c=>c.id===p.cliente_id)?.razao_social||"—"},
+        {label:"Valor",get:p=>fmtR(p.valor_total)},{label:"Entrega Prevista",get:p=>fmtD(p.data_entrega_prevista)},
+        {label:"Status",get:p=>(STATUS_PEDIDO[p.status]||{label:p.status}).label},{label:"Vendedor",get:p=>p.vendedor||"—"},
+      ]} rows={pedidos}/>}>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 900 }}>
             <thead><tr><Th>Número</Th><Th>Cliente</Th><Th>Valor</Th><Th>Entrega Prevista</Th><Th>Status</Th><Th>Vendedor</Th><Th></Th></tr></thead>
@@ -1538,26 +1564,31 @@ export default function App() {
 
   return <div style={{display:"flex",minHeight:"100vh",background:C.bg,fontFamily:"Inter,system-ui,sans-serif",color:C.text}}>
     <style>{`*{box-sizing:border-box;margin:0;padding:0}@keyframes spin{to{transform:rotate(360deg)}}::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-thumb{background:${C.border};border-radius:3px}`}</style>
-    <aside style={{width:W,flexShrink:0,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",transition:"width .2s",overflow:"hidden",position:"sticky",top:0,height:"100vh"}}>
-      <div style={{padding:"14px 12px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:10,minHeight:58}}>
-        <div style={{width:34,height:34,background:`linear-gradient(135deg,${C.navy},${C.accent})`,borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0,color:"#fff",fontWeight:900}}>⚙</div>
-        {open&&<div><div style={{fontSize:13,fontWeight:900}}>ERP Industrial</div><div style={{fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:"0.06em"}}>Supabase Live</div></div>}
+    <aside style={{width:W,flexShrink:0,background:`linear-gradient(180deg,${C.navy} 0%,${C.accent} 130%)`,display:"flex",flexDirection:"column",transition:"width .2s",overflow:"hidden",position:"sticky",top:0,height:"100vh"}}>
+      <div style={{padding:"16px 12px",borderBottom:"1px solid rgba(255,255,255,0.12)",display:"flex",alignItems:"center",gap:10,minHeight:58}}>
+        <div style={{width:34,height:34,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <svg viewBox="0 0 40 40" width="34" height="34" fill="none">
+            <path d="M20 3 L35 11.5 L35 28.5 L20 37 L5 28.5 L5 11.5 Z" stroke="#fff" strokeWidth="2.2" strokeLinejoin="round"/>
+            <path d="M14 13 L14 27 L14 20 L26 13 L26 27" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+          </svg>
+        </div>
+        {open&&<div><div style={{fontSize:13,fontWeight:900,color:"#fff"}}>Linha ERP</div><div style={{fontSize:10,color:"rgba(255,255,255,0.65)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Supabase Live</div></div>}
       </div>
       <nav style={{flex:1,padding:"8px",overflowY:"auto",display:"flex",flexDirection:"column",gap:1}}>
         {groups.map(g=><div key={g}>
-          {open&&<div style={{fontSize:10,fontWeight:700,color:C.faint,textTransform:"uppercase",letterSpacing:"0.1em",padding:"10px 8px 3px"}}>{GROUPS[g]}</div>}
-          {NAV.filter(n=>n.group===g).map(n=><button key={n.id} onClick={()=>setPage(n.id)} style={{display:"flex",alignItems:"center",gap:9,padding:open?"8px 10px":"8px",justifyContent:open?"flex-start":"center",borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",background:page===n.id?C.accentLight:"transparent",color:page===n.id?C.accent:C.muted,fontWeight:page===n.id?700:500,fontSize:13,width:"100%",textAlign:"left",marginBottom:1}}>
+          {open&&<div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.1em",padding:"10px 8px 3px"}}>{GROUPS[g]}</div>}
+          {NAV.filter(n=>n.group===g).map(n=><button key={n.id} onClick={()=>setPage(n.id)} style={{display:"flex",alignItems:"center",gap:9,padding:open?"8px 10px":"8px",justifyContent:open?"flex-start":"center",borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",background:page===n.id?"rgba(255,255,255,0.16)":"transparent",color:page===n.id?"#fff":"rgba(255,255,255,0.7)",fontWeight:page===n.id?700:500,fontSize:13,width:"100%",textAlign:"left",marginBottom:1}}>
             <span style={{fontSize:15,flexShrink:0}}>{n.icon}</span>
             {open&&<span style={{whiteSpace:"nowrap"}}>{n.label}</span>}
           </button>)}
         </div>)}
       </nav>
-      <div style={{borderTop:`1px solid ${C.border}`,padding:"8px"}}>
-        {open&&user&&<div style={{display:"flex",alignItems:"center",gap:9,padding:"8px 10px",borderRadius:8,background:C.bg,marginBottom:8,cursor:"pointer"}} onClick={()=>setPage("usuarios")}>
-          <div style={{width:28,height:28,borderRadius:"50%",background:C.accent,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,flexShrink:0}}>{user.avatar}</div>
-          <div style={{overflow:"hidden",flex:1}}><div style={{fontSize:12,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{user.nome?.split(" ")[0]}</div><div style={{fontSize:10,color:C.muted}}>{user.cargo}</div></div>
+      <div style={{borderTop:"1px solid rgba(255,255,255,0.12)",padding:"8px"}}>
+        {open&&user&&<div style={{display:"flex",alignItems:"center",gap:9,padding:"8px 10px",borderRadius:8,background:"rgba(255,255,255,0.08)",marginBottom:8,cursor:"pointer"}} onClick={()=>setPage("usuarios")}>
+          <div style={{width:28,height:28,borderRadius:"50%",background:"rgba(255,255,255,0.25)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,flexShrink:0}}>{user.avatar}</div>
+          <div style={{overflow:"hidden",flex:1}}><div style={{fontSize:12,fontWeight:700,color:"#fff",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{user.nome?.split(" ")[0]}</div><div style={{fontSize:10,color:"rgba(255,255,255,0.6)"}}>{user.cargo}</div></div>
         </div>}
-        <button onClick={()=>setOpen(p=>!p)} style={{width:"100%",background:"none",border:`1px solid ${C.border}`,borderRadius:8,padding:"6px",cursor:"pointer",color:C.muted,fontSize:13}}>{open?"◀":"▶"}</button>
+        <button onClick={()=>setOpen(p=>!p)} style={{width:"100%",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,padding:"6px",cursor:"pointer",color:"rgba(255,255,255,0.8)",fontSize:13}}>{open?"◀":"▶"}</button>
       </div>
     </aside>
     <main style={{flex:1,minWidth:0,display:"flex",flexDirection:"column"}}>
