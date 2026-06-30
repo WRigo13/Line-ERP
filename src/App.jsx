@@ -282,80 +282,6 @@ function ViewOrdens({showToast}) {
 }
 
 // ── ESTOQUE ──────────────────────────────────────────────────────────────────
-function ViewEstoque({showToast}) {
-  const {data:estoque,loading,error,reload}=useTable("estoque_mp")
-  const {data:movs,reload:reloadMovs}=useTable("movimentacoes_estoque")
-  const [tab,setTab]=useState("estoque")
-  const [modal,setModal]=useState(false)
-  const [movModal,setMovModal]=useState(false)
-  const [edit,setEdit]=useState(null)
-  const [form,setForm]=useState({})
-  const [movForm,setMovForm]=useState({tipo:"saida"})
-  const [saving,setSaving]=useState(false)
-  const F=v=>setForm(f=>({...f,...v}))
-  const MFm=v=>setMovForm(f=>({...f,...v}))
-  const alertas=estoque.filter(e=>e.saldo<=e.minimo)
-  const valorTotal=estoque.reduce((s,e)=>s+e.saldo*e.custo_unit,0)
-  const sSaldo=e=>{if(e.saldo<=e.minimo)return{l:"Crítico",c:C.red,bg:C.redLight};if(e.saldo>=e.maximo*.9)return{l:"Excesso",c:C.amber,bg:C.amberLight};return{l:"OK",c:C.green,bg:C.greenLight}}
-  function openNew(){setEdit(null);setForm({unidade:"kg",saldo:0,minimo:100,maximo:1000,custo_unit:0,categoria:"Aço"});setModal(true)}
-  function openEdit(e){setEdit(e);setForm({...e});setModal(true)}
-  async function saveItem(){if(!form.codigo||!form.descricao)return showToast("Preencha código e descrição","error");setSaving(true);const p={...form,...Object.fromEntries(["saldo","minimo","maximo","custo_unit"].map(k=>[k,Number(form[k]||0)]))};const{error:e}=edit?await dbUpd("estoque_mp",edit.id,p):await dbIns("estoque_mp",p);e?showToast("Erro: "+e.message,"error"):(showToast(edit?"Atualizado":"Criado","success"),await reload());setSaving(false);setModal(false)}
-  async function saveMov(){if(!movForm.mp_codigo||!movForm.quantidade)return showToast("Preencha item e quantidade","error");setSaving(true);const qtd=Number(movForm.quantidade);await dbIns("movimentacoes_estoque",{...movForm,quantidade:qtd,data:TODAY});const item=estoque.find(e=>e.codigo===movForm.mp_codigo);if(item){const ns=movForm.tipo==="entrada"?item.saldo+qtd:Math.max(0,item.saldo-qtd);await dbUpd("estoque_mp",item.id,{saldo:ns,ultima_entrada:movForm.tipo==="entrada"?TODAY:item.ultima_entrada})}showToast("Movimentação registrada","success");await reload();await reloadMovs();setSaving(false);setMovModal(false);setMovForm({tipo:"saida"})}
-  if(loading)return <Spinner/>;if(error)return <ErrBox msg={error} onRetry={reload}/>
-  return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:10}}>
-      <KCard label="Itens" value={estoque.length} icon="📦"/><KCard label="Alertas" value={alertas.length} color={alertas.length>0?C.red:C.green} icon="⚠️" bg={alertas.length>0?C.redLight:C.surface}/><KCard label="Valor Total" value={fmtR(valorTotal)} icon="💰"/><KCard label="Movimentações" value={movs.length} icon="🔄"/>
-    </div>
-    <Tabs tabs={[{key:"estoque",label:"Estoque"},{key:"movimentacoes",label:"Movimentações"},{key:"alertas",label:`Alertas (${alertas.length})`}]} active={tab} onChange={setTab}/>
-    {tab==="estoque"&&<><div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Btn variant="ghost" onClick={()=>setMovModal(true)}>+ Movimentação</Btn><Btn onClick={openNew}>+ Novo Item</Btn></div>
-      <Section title={`${estoque.length} itens`}><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:900}}>
-        <thead><tr><Th>Código</Th><Th>Descrição</Th><Th>Saldo</Th><Th>Mín/Máx</Th><Th>Custo</Th><Th>Valor</Th><Th>Status</Th><Th>Ult. Entrada</Th><Th></Th></tr></thead>
-        <tbody>{estoque.map((e,i)=>{const s=sSaldo(e);return<tr key={e.id} style={{borderTop:`1px solid ${C.border}`,background:i%2?C.bg:C.surface}}>
-          <Td><span style={{fontWeight:800,color:C.accent,fontSize:12}}>{e.codigo}</span></Td><Td style={{fontWeight:600}}>{e.descricao}</Td>
-          <Td><span style={{fontWeight:800}}>{fmt(e.saldo)}</span><span style={{fontSize:11,color:C.muted,marginLeft:4}}>{e.unidade}</span></Td>
-          <Td style={{color:C.muted,fontSize:12}}>{fmt(e.minimo)}/{fmt(e.maximo)}</Td><Td style={{color:C.muted}}>{fmtR(e.custo_unit)}</Td>
-          <Td style={{fontWeight:700}}>{fmtR(e.saldo*e.custo_unit)}</Td>
-          <Td><span style={{fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:20,color:s.c,background:s.bg}}>{s.l}</span></Td>
-          <Td style={{color:C.muted,whiteSpace:"nowrap"}}>{fmtD(e.ultima_entrada)}</Td>
-          <Td><Btn size="sm" variant="ghost" onClick={()=>openEdit(e)}>Editar</Btn></Td>
-        </tr>})}</tbody>
-      </table></div></Section></>}
-    {tab==="movimentacoes"&&<Section title="Movimentações"><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-      <thead><tr><Th>Data</Th><Th>Item</Th><Th>Tipo</Th><Th>Qtd</Th><Th>OP</Th><Th>Motivo</Th></tr></thead>
-      <tbody>{movs.map((m,i)=><tr key={m.id} style={{borderTop:`1px solid ${C.border}`,background:i%2?C.bg:C.surface}}>
-        <Td style={{color:C.muted}}>{fmtD(m.data)}</Td><Td><span style={{fontWeight:700,color:C.accent}}>{m.mp_codigo}</span></Td>
-        <Td><span style={{fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:20,color:m.tipo==="entrada"?C.green:C.amber,background:m.tipo==="entrada"?C.greenLight:C.amberLight}}>{m.tipo==="entrada"?"Entrada":"Saída"}</span></Td>
-        <Td style={{fontWeight:700}}>{fmt(m.quantidade)}</Td><Td style={{color:C.muted}}>{m.op||"—"}</Td><Td style={{color:C.muted}}>{m.motivo}</Td>
-      </tr>)}</tbody>
-    </table></div></Section>}
-    {tab==="alertas"&&<div style={{display:"flex",flexDirection:"column",gap:10}}>
-      {alertas.length===0&&<div style={{background:C.greenLight,border:`1px solid ${C.greenMid}`,borderRadius:12,padding:20,textAlign:"center",fontSize:14,color:C.green,fontWeight:700}}>✅ Todos os itens acima do mínimo!</div>}
-      {alertas.map(e=><div key={e.id} style={{background:C.redLight,border:`1px solid ${C.redMid}`,borderRadius:12,padding:"14px 20px",display:"flex",gap:14,alignItems:"center"}}>
-        <span style={{fontSize:22}}>⚠️</span>
-        <div style={{flex:1}}><div style={{fontWeight:800,fontSize:14}}>{e.codigo} — {e.descricao}</div><div style={{fontSize:13,color:C.red,marginTop:2}}>Saldo: <b>{fmt(e.saldo)} {e.unidade}</b> · Mín: <b>{fmt(e.minimo)}</b> · {e.fornecedor}</div></div>
-        <Btn variant="success" size="sm" onClick={()=>{setMovForm({tipo:"entrada",mp_codigo:e.codigo});setMovModal(true)}}>+ Entrada</Btn>
-      </div>)}
-    </div>}
-    {modal&&<Modal title={edit?"Editar Item":"Novo Item"} onClose={()=>setModal(false)}>
-      <G2><Inp label="Código" value={form.codigo||""} onChange={e=>F({codigo:e.target.value})}/><Sel label="Categoria" value={form.categoria||""} onChange={e=>F({categoria:e.target.value})}><option>Aço</option><option>Inox</option><option>Bronze</option><option>Plástico</option><option>Consumível</option><option>Outro</option></Sel>
-        <Full><Inp label="Descrição" value={form.descricao||""} onChange={e=>F({descricao:e.target.value})}/></Full>
-        <Inp label="Fornecedor" value={form.fornecedor||""} onChange={e=>F({fornecedor:e.target.value})}/><Sel label="Unidade" value={form.unidade||"kg"} onChange={e=>F({unidade:e.target.value})}><option value="kg">kg</option><option value="L">L</option><option value="m">m</option><option value="un">un</option></Sel>
-        <Inp label="Saldo" type="number" value={form.saldo||0} onChange={e=>F({saldo:e.target.value})}/><Inp label="Custo Unit." type="number" value={form.custo_unit||0} onChange={e=>F({custo_unit:e.target.value})}/>
-        <Inp label="Mínimo" type="number" value={form.minimo||0} onChange={e=>F({minimo:e.target.value})}/><Inp label="Máximo" type="number" value={form.maximo||0} onChange={e=>F({maximo:e.target.value})}/>
-      </G2><MFoot onCancel={()=>setModal(false)} onSave={saveItem} saving={saving} label={edit?"Atualizar":"Criar"}/>
-    </Modal>}
-    {movModal&&<Modal title="Registrar Movimentação" onClose={()=>setMovModal(false)}>
-      <G2><Sel label="Tipo" value={movForm.tipo} onChange={e=>MFm({tipo:e.target.value})}><option value="entrada">Entrada</option><option value="saida">Saída</option></Sel>
-        <Sel label="Item" value={movForm.mp_codigo||""} onChange={e=>MFm({mp_codigo:e.target.value})}><option value="">Selecione...</option>{estoque.map(e=><option key={e.id} value={e.codigo}>{e.codigo}</option>)}</Sel>
-        <Inp label="Quantidade" type="number" value={movForm.quantidade||""} onChange={e=>MFm({quantidade:e.target.value})}/><Inp label="OP (opcional)" value={movForm.op||""} onChange={e=>MFm({op:e.target.value})}/>
-        <Full><Inp label="Motivo" value={movForm.motivo||""} onChange={e=>MFm({motivo:e.target.value})}/></Full>
-        <Full><Inp label="Usuário" value={movForm.usuario||""} onChange={e=>MFm({usuario:e.target.value})}/></Full>
-      </G2><MFoot onCancel={()=>setMovModal(false)} onSave={saveMov} saving={saving} label="Registrar"/>
-    </Modal>}
-  </div>
-}
-
-// ── FINANCEIRO ───────────────────────────────────────────────────────────────
 function ViewFinanceiro({showToast}) {
   const {data:pagar,loading,error,reload:rp}=useTable("contas_pagar")
   const {data:receber,reload:rr}=useTable("contas_receber")
@@ -443,63 +369,442 @@ function ViewFinanceiro({showToast}) {
 }
 
 // ── RH ───────────────────────────────────────────────────────────────────────
-function ViewRH({showToast}) {
-  const {data:funcs,loading,error,reload}=useTable("funcionarios")
-  const {data:pontos,reload:reloadP}=useTable("registros_ponto")
-  const [tab,setTab]=useState("funcionarios")
-  const [modal,setModal]=useState(null)
-  const [form,setForm]=useState({turno:"manhã",ativo:true})
-  const [pontoForm,setPontoForm]=useState({})
-  const [saving,setSaving]=useState(false)
-  const F=v=>setForm(f=>({...f,...v}))
-  const PF=v=>setPontoForm(f=>({...f,...v}))
-  if(loading)return <Spinner/>;if(error)return <ErrBox msg={error} onRetry={reload}/>
-  const folhaMensal=funcs.filter(f=>f.ativo).reduce((s,f)=>s+f.salario,0)
-  async function saveFunc(){if(!form.nome)return showToast("Preencha o nome","error");setSaving(true);const{error:e}=await dbIns("funcionarios",{...form,salario:Number(form.salario||0),avatar:form.nome.split(" ").map(n=>n[0]).join("").substring(0,2).toUpperCase(),matricula:form.matricula||`M-${String(funcs.length+1).padStart(3,"0")}`});e?showToast("Erro: "+e.message,"error"):(showToast("Criado","success"),await reload());setSaving(false);setModal(null)}
-  async function savePonto(){if(!pontoForm.funcionario_id)return showToast("Selecione o funcionário","error");setSaving(true);const{error:e}=await dbIns("registros_ponto",{...pontoForm,funcionario_id:Number(pontoForm.funcionario_id),horas_extras:Number(pontoForm.horas_extras||0),data:TODAY});e?showToast("Erro: "+e.message,"error"):(showToast("Ponto registrado","success"),await reloadP());setSaving(false);setModal(null);setPontoForm({})}
+function ViewApontamentos({showToast}){
+  const {data:apts,loading,error,reload}=useTable("apontamentos");
+  const {data:ordens}=useTable("ordens_producao");
+  const [modal,setModal]=useState(false);
+  const [form,setForm]=useState({turno:"manhã",refugo:0});
+  const [saving,setSaving]=useState(false);
+  const F=v=>setForm(f=>({...f,...v}));
+  const ops=ordens.filter(o=>["planejada","em_producao","atrasada"].includes(o.status));
+  const hoje=apts.filter(a=>a.data===TODAY);
+  const prodHoje=hoje.reduce((s,a)=>s+a.quantidade,0);
+  const refugoHoje=hoje.reduce((s,a)=>s+a.refugo,0);
+  async function save(){if(!form.op||!form.quantidade)return showToast("Preencha OP e quantidade","error");setSaving(true);const{error:e}=await dbIns("apontamentos",{...form,quantidade:Number(form.quantidade),refugo:Number(form.refugo||0),data:TODAY});e?showToast("Erro: "+e.message,"error"):(showToast("Registrado","success"),await reload());setSaving(false);setModal(false);setForm({turno:"manhã",refugo:0});}
+  if(loading)return <Spinner/>;if(error)return <ErrBox msg={error} onRetry={reload}/>;
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:10}}>
-      <KCard label="Ativos" value={funcs.filter(f=>f.ativo).length} sub={`de ${funcs.length}`} icon="👤"/>
-      <KCard label="Folha Mensal" value={fmtR(folhaMensal)} icon="💰"/>
-      <KCard label="Pontos Hoje" value={pontos.filter(p=>p.data===TODAY).length} color={C.accent} icon="🕐"/>
+      <KCard label="Produzido Hoje" value={fmt(prodHoje)} sub="peças" color={C.accent} icon="📦"/>
+      <KCard label="Refugo Hoje" value={refugoHoje} color={refugoHoje>5?C.amber:C.green} icon="🗑️"/>
+      <KCard label="Taxa de Refugo" value={prodHoje>0?`${((refugoHoje/prodHoje)*100).toFixed(1)}%`:"—"} color={C.text} icon="📊"/>
+      <KCard label="Total Lançamentos" value={apts.length} color={C.text} icon="📝"/>
     </div>
-    <Tabs tabs={[{key:"funcionarios",label:"Funcionários"},{key:"ponto",label:"Registros de Ponto"}]} active={tab} onChange={setTab}/>
-    {tab==="funcionarios"&&<><div style={{display:"flex",justifyContent:"flex-end"}}><Btn onClick={()=>{setForm({turno:"manhã",ativo:true});setModal("func")}}>+ Novo Funcionário</Btn></div>
-      <Section title={`${funcs.length} funcionários`}><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:700}}>
+    <div style={{display:"flex",justifyContent:"flex-end"}}><Btn onClick={()=>setModal(true)}>+ Registrar Apontamento</Btn></div>
+    <Section title="Histórico">
+      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:700}}>
+        <thead><tr><Th>Data</Th><Th>OP</Th><Th>Operador</Th><Th>Centro</Th><Th>Turno</Th><Th>Produzido</Th><Th>Refugo</Th><Th>Obs</Th></tr></thead>
+        <tbody>{apts.map((a,i)=><tr key={a.id} style={{borderTop:`1px solid ${C.border}`,background:i%2?C.bg:C.surface}}>
+          <Td style={{color:C.muted,whiteSpace:"nowrap"}}>{fmtD(a.data)}</Td>
+          <Td><span style={{fontWeight:700,color:C.accent}}>{a.op}</span></Td>
+          <Td>{a.operador}</Td><Td style={{color:C.muted}}>{a.centro}</Td>
+          <Td style={{color:C.muted,textTransform:"capitalize"}}>{a.turno}</Td>
+          <Td><span style={{fontWeight:700}}>{a.quantidade}</span></Td>
+          <Td><span style={{color:a.refugo>0?C.red:C.green,fontWeight:700}}>{a.refugo}</span></Td>
+          <Td style={{color:C.muted,fontSize:12}}>{a.obs||"—"}</Td>
+        </tr>)}</tbody>
+      </table></div>
+    </Section>
+    {modal&&<Modal title="Registrar Apontamento" onClose={()=>setModal(false)}>
+      <G2>
+        <Full><Sel label="Ordem de Produção" value={form.op||""} onChange={e=>{const op=ops.find(o=>o.codigo===e.target.value);F({op:e.target.value,centro:op?.centro||form.centro});}}>
+          <option value="">Selecione a OP...</option>{ops.map(o=><option key={o.id} value={o.codigo}>{o.codigo} — {o.produto}</option>)}
+        </Sel></Full>
+        <Inp label="Operador" value={form.operador||""} onChange={e=>F({operador:e.target.value})}/>
+        <Sel label="Turno" value={form.turno} onChange={e=>F({turno:e.target.value})}><option value="manhã">Manhã</option><option value="tarde">Tarde</option><option value="noite">Noite</option></Sel>
+        <Inp label="Qtd Produzida" type="number" value={form.quantidade||""} onChange={e=>F({quantidade:e.target.value})}/>
+        <Inp label="Refugo" type="number" value={form.refugo} onChange={e=>F({refugo:e.target.value})}/>
+        <Full><Inp label="Centro de Trabalho" value={form.centro||""} onChange={e=>F({centro:e.target.value})}/></Full>
+        <Full><Inp label="Observação" value={form.obs||""} onChange={e=>F({obs:e.target.value})}/></Full>
+      </G2><MFoot onCancel={()=>setModal(false)} onSave={save} saving={saving} label="Registrar"/>
+    </Modal>}
+  </div>;
+}
+
+// ─── OEE ──────────────────────────────────────────────────────────────────────
+function ViewOEE({showToast}){
+  const {data:centros,loading,error,reload}=useTable("centros_trabalho");
+  const {data:apts}=useTable("apontamentos");
+  const [modal,setModal]=useState(false);
+  const [edit,setEdit]=useState(null);
+  const [form,setForm]=useState({});
+  const [saving,setSaving]=useState(false);
+  const F=v=>setForm(f=>({...f,...v}));
+  function calcOEE(c){const util=c.tempo_produtivo+c.setup;const disp=c.capacidade>0?util/c.capacidade*100:0;const perf=util>0?c.tempo_produtivo/util*100:0;const apt=apts.filter(a=>a.centro===c.nome);const tP=apt.reduce((s,a)=>s+a.quantidade,0);const tR=apt.reduce((s,a)=>s+a.refugo,0);const qual=tP>0?(1-tR/tP)*100:100;const oee=(disp/100)*(perf/100)*(qual/100)*100;return{disp:Math.min(disp,100),perf:Math.min(perf,100),qual:Math.min(qual,100),oee:Math.min(oee,100)};}
+  function openEdit(c){setEdit(c);setForm({...c});setModal(true);}
+  async function save(){setSaving(true);const nums=["capacidade","utilizado","tempo_produtivo","paradas","setup","operadores","maquinas"];const p={...form,...Object.fromEntries(nums.map(k=>[k,Number(form[k]||0)]))};const{error:e}=await dbUpd("centros_trabalho",edit.id,p);e?showToast("Erro: "+e.message,"error"):(showToast("Atualizado","success"),await reload());setSaving(false);setModal(false);}
+  if(loading)return <Spinner/>;if(error)return <ErrBox msg={error} onRetry={reload}/>;
+  return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+    <div style={{background:C.accentLight,border:`1px solid ${C.accentMid}`,borderRadius:12,padding:"14px 20px",display:"flex",gap:20,flexWrap:"wrap"}}>
+      {[{l:"Disponibilidade",s:"Tempo útil/Capacidade",c:C.accent},{l:"Performance",s:"Produtivo/Útil",c:C.purple},{l:"Qualidade",s:"Boas peças/Total",c:C.green},{l:"OEE",s:"D×P×Q",c:C.navy},{l:"World Class",s:"≥ 85%",c:C.green},{l:"Bom",s:"65–84%",c:C.amber},{l:"Crítico",s:"< 65%",c:C.red}].map(x=><div key={x.l} style={{flex:1,minWidth:100}}><div style={{fontSize:12,fontWeight:800,color:x.c,marginBottom:1}}>{x.l}</div><div style={{fontSize:11,color:C.muted}}>{x.s}</div></div>)}
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:14}}>
+      {centros.map(c=>{const{disp,perf,qual,oee}=calcOEE(c);const col=oee>=85?C.green:oee>=65?C.amber:C.red;const lbl=oee>=85?"World Class ⭐":oee>=65?"Bom":"Crítico";
+        return <div key={c.id} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:20}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
+            <div><div style={{fontWeight:800,fontSize:15}}>{c.nome}</div><div style={{fontSize:12,color:C.muted}}>Turno {c.turno} · {c.operadores} op. · {c.maquinas} máq.</div></div>
+            <div style={{textAlign:"right"}}><div style={{fontSize:28,fontWeight:900,color:col,lineHeight:1}}>{oee.toFixed(0)}%</div><div style={{fontSize:11,color:col,fontWeight:700}}>{lbl}</div></div>
+          </div>
+          {!c.disponivel&&<div style={{background:C.redLight,color:C.red,fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:6,marginBottom:10,textAlign:"center"}}>⛔ MÁQUINA PARADA</div>}
+          {[{l:"Disponibilidade",v:disp,c:C.accent},{l:"Performance",v:perf,c:C.purple},{l:"Qualidade",v:qual,c:C.green}].map(r=><div key={r.l} style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:4}}><span style={{color:C.muted}}>{r.l}</span><span style={{fontWeight:700,color:r.c}}>{r.v.toFixed(1)}%</span></div><MiniBar val={r.v} max={100} color={r.c}/></div>)}
+          <div style={{borderTop:`1px solid ${C.border}`,paddingTop:10,display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,fontSize:11,textAlign:"center"}}>
+            <div><div style={{color:C.muted}}>Produtivo</div><div style={{fontWeight:700}}>{c.tempo_produtivo}h</div></div>
+            <div><div style={{color:C.muted}}>Paradas</div><div style={{fontWeight:700,color:C.red}}>{c.paradas}h</div></div>
+            <div><div style={{color:C.muted}}>Setup</div><div style={{fontWeight:700,color:C.amber}}>{c.setup}h</div></div>
+          </div>
+          <div style={{marginTop:10}}><Btn size="sm" variant="ghost" sx={{width:"100%"}} onClick={()=>openEdit(c)}>Atualizar Dados</Btn></div>
+        </div>;
+      })}
+    </div>
+    {modal&&<Modal title="Atualizar Centro" onClose={()=>setModal(false)}>
+      <G2>
+        <Full><div style={{fontWeight:700,fontSize:14}}>{edit?.nome}</div></Full>
+        <Inp label="Capacidade (h/mês)" type="number" value={form.capacidade||""} onChange={e=>F({capacidade:e.target.value})}/><Inp label="Utilizado (h/mês)" type="number" value={form.utilizado||0} onChange={e=>F({utilizado:e.target.value})}/>
+        <Inp label="Tempo Produtivo (h)" type="number" value={form.tempo_produtivo||0} onChange={e=>F({tempo_produtivo:e.target.value})}/><Inp label="Paradas (h)" type="number" value={form.paradas||0} onChange={e=>F({paradas:e.target.value})}/>
+        <Inp label="Setup (h)" type="number" value={form.setup||0} onChange={e=>F({setup:e.target.value})}/><Inp label="Operadores" type="number" value={form.operadores||1} onChange={e=>F({operadores:e.target.value})}/>
+        <Full><div style={{display:"flex",alignItems:"center",gap:10}}><input type="checkbox" checked={form.disponivel!==false} onChange={e=>F({disponivel:e.target.checked})} style={{width:16,height:16}}/><label style={{fontSize:14,fontWeight:600}}>Centro disponível</label></div></Full>
+      </G2><MFoot onCancel={()=>setModal(false)} onSave={save} saving={saving}/>
+    </Modal>}
+  </div>;
+}
+
+// ─── ESTOQUE ──────────────────────────────────────────────────────────────────
+function ViewEstoque({showToast}){
+  const {data:estoque,loading,error,reload}=useTable("estoque_mp");
+  const {data:movs,reload:reloadMovs}=useTable("movimentacoes_estoque");
+  const [tab,setTab]=useState("estoque");
+  const [modal,setModal]=useState(false);
+  const [movModal,setMovModal]=useState(false);
+  const [edit,setEdit]=useState(null);
+  const [form,setForm]=useState({});
+  const [movForm,setMovForm]=useState({tipo:"saida"});
+  const [saving,setSaving]=useState(false);
+  const F=v=>setForm(f=>({...f,...v}));
+  const MFm=v=>setMovForm(f=>({...f,...v}));
+  const alertas=estoque.filter(e=>e.saldo<=e.minimo);
+  const valorTotal=estoque.reduce((s,e)=>s+e.saldo*e.custo_unit,0);
+  const nums=["saldo","minimo","maximo","custo_unit"];
+  function openNew(){setEdit(null);setForm({unidade:"kg",saldo:0,minimo:100,maximo:1000,custo_unit:0,categoria:"Aço"});setModal(true);}
+  function openEdit(e){setEdit(e);setForm({...e});setModal(true);}
+  async function saveItem(){if(!form.codigo||!form.descricao)return showToast("Preencha código e descrição","error");setSaving(true);const p={...form,...Object.fromEntries(nums.map(k=>[k,Number(form[k]||0)]))};const{error:e}=edit?await dbUpd("estoque_mp",edit.id,p):await dbIns("estoque_mp",p);e?showToast("Erro: "+e.message,"error"):(showToast(edit?"Atualizado":"Criado","success"),await reload());setSaving(false);setModal(false);}
+  async function saveMov(){if(!movForm.mp_codigo||!movForm.quantidade)return showToast("Preencha item e quantidade","error");setSaving(true);const qtd=Number(movForm.quantidade);await dbIns("movimentacoes_estoque",{...movForm,quantidade:qtd,data:TODAY});const item=estoque.find(e=>e.codigo===movForm.mp_codigo);if(item){const ns=movForm.tipo==="entrada"?item.saldo+qtd:Math.max(0,item.saldo-qtd);await dbUpd("estoque_mp",item.id,{saldo:ns,ultima_entrada:movForm.tipo==="entrada"?TODAY:item.ultima_entrada});}showToast("Movimentação registrada","success");await reload();await reloadMovs();setSaving(false);setMovModal(false);setMovForm({tipo:"saida"});}
+  const sSaldo=e=>{if(e.saldo<=e.minimo)return{l:"Crítico",c:C.red,bg:C.redLight};if(e.saldo>=e.maximo*.9)return{l:"Excesso",c:C.amber,bg:C.amberLight};return{l:"OK",c:C.green,bg:C.greenLight};};
+  if(loading)return <Spinner/>;if(error)return <ErrBox msg={error} onRetry={reload}/>;
+  return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:10}}>
+      <KCard label="Itens" value={estoque.length} color={C.text} icon="📦"/>
+      <KCard label="Alertas" value={alertas.length} color={alertas.length>0?C.red:C.green} icon="⚠️" bg={alertas.length>0?C.redLight:C.surface}/>
+      <KCard label="Valor Total" value={fmtR(valorTotal)} color={C.text} icon="💰"/>
+      <KCard label="Movimentações" value={movs.length} color={C.text} icon="🔄"/>
+    </div>
+    <Tabs tabs={[{key:"estoque",label:"Estoque"},{key:"movimentacoes",label:"Movimentações"},{key:"alertas",label:`Alertas (${alertas.length})`}]} active={tab} onChange={setTab}/>
+    {tab==="estoque"&&<><div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Btn variant="ghost" onClick={()=>setMovModal(true)}>+ Movimentação</Btn><Btn onClick={openNew}>+ Novo Item</Btn></div>
+      <Section title={`${estoque.length} itens`}><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:900}}>
+        <thead><tr><Th>Código</Th><Th>Descrição</Th><Th>Categoria</Th><Th>Saldo</Th><Th>Mín/Máx</Th><Th>Custo</Th><Th>Valor</Th><Th>Status</Th><Th>Ult. Entrada</Th><Th></Th></tr></thead>
+        <tbody>{estoque.map((e,i)=>{const s=sSaldo(e);return<tr key={e.id} style={{borderTop:`1px solid ${C.border}`,background:i%2?C.bg:C.surface}}>
+          <Td><span style={{fontWeight:800,color:C.accent,fontSize:12}}>{e.codigo}</span></Td>
+          <Td style={{fontWeight:600}}>{e.descricao}</Td>
+          <Td style={{color:C.muted}}>{e.categoria}</Td>
+          <Td><span style={{fontWeight:800}}>{fmt(e.saldo)}</span><span style={{fontSize:11,color:C.muted,marginLeft:4}}>{e.unidade}</span></Td>
+          <Td style={{color:C.muted,fontSize:12}}>{fmt(e.minimo)}/{fmt(e.maximo)}</Td>
+          <Td style={{color:C.muted}}>{fmtR(e.custo_unit)}</Td>
+          <Td style={{fontWeight:700}}>{fmtR(e.saldo*e.custo_unit)}</Td>
+          <Td><span style={{fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:20,color:s.c,background:s.bg}}>{s.l}</span></Td>
+          <Td style={{color:C.muted,whiteSpace:"nowrap"}}>{fmtD(e.ultima_entrada)}</Td>
+          <Td><Btn size="sm" variant="ghost" onClick={()=>openEdit(e)}>Editar</Btn></Td>
+        </tr>;})}
+        </tbody></table></div></Section></>}
+    {tab==="movimentacoes"&&<Section title="Movimentações"><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+      <thead><tr><Th>Data</Th><Th>Item</Th><Th>Tipo</Th><Th>Qtd</Th><Th>OP</Th><Th>Motivo</Th><Th>Usuário</Th></tr></thead>
+      <tbody>{movs.map((m,i)=><tr key={m.id} style={{borderTop:`1px solid ${C.border}`,background:i%2?C.bg:C.surface}}>
+        <Td style={{color:C.muted,whiteSpace:"nowrap"}}>{fmtD(m.data)}</Td>
+        <Td><span style={{fontWeight:700,color:C.accent}}>{m.mp_codigo}</span></Td>
+        <Td><span style={{fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:20,color:m.tipo==="entrada"?C.green:C.amber,background:m.tipo==="entrada"?C.greenLight:C.amberLight}}>{m.tipo==="entrada"?"Entrada":"Saída"}</span></Td>
+        <Td style={{fontWeight:700}}>{fmt(m.quantidade)}</Td><Td style={{color:C.muted}}>{m.op||"—"}</Td>
+        <Td style={{color:C.muted}}>{m.motivo}</Td><Td style={{color:C.muted}}>{m.usuario}</Td>
+      </tr>)}</tbody></table></div></Section>}
+    {tab==="alertas"&&<div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {alertas.length===0&&<div style={{background:C.greenLight,border:`1px solid ${C.greenMid}`,borderRadius:12,padding:20,textAlign:"center",fontSize:14,color:C.green,fontWeight:700}}>✅ Todos os itens acima do mínimo!</div>}
+      {alertas.map(e=><div key={e.id} style={{background:C.redLight,border:`1px solid ${C.redMid}`,borderRadius:12,padding:"14px 20px",display:"flex",gap:14,alignItems:"center"}}>
+        <span style={{fontSize:22}}>⚠️</span>
+        <div style={{flex:1}}><div style={{fontWeight:800,fontSize:14}}>{e.codigo} — {e.descricao}</div><div style={{fontSize:13,color:C.red,marginTop:2}}>Saldo: <strong>{fmt(e.saldo)} {e.unidade}</strong> · Mínimo: <strong>{fmt(e.minimo)}</strong> · {e.fornecedor}</div></div>
+        <Btn variant="success" size="sm" onClick={()=>{setMovForm({tipo:"entrada",mp_codigo:e.codigo});setMovModal(true);}}>+ Entrada</Btn>
+      </div>)}
+    </div>}
+    {modal&&<Modal title={edit?"Editar Item":"Novo Item"} onClose={()=>setModal(false)}>
+      <G2><Inp label="Código" value={form.codigo||""} onChange={e=>F({codigo:e.target.value})}/><Sel label="Categoria" value={form.categoria||""} onChange={e=>F({categoria:e.target.value})}><option>Aço</option><option>Inox</option><option>Bronze</option><option>Plástico</option><option>Consumível</option><option>Outro</option></Sel>
+        <Full><Inp label="Descrição" value={form.descricao||""} onChange={e=>F({descricao:e.target.value})}/></Full>
+        <Inp label="Fornecedor" value={form.fornecedor||""} onChange={e=>F({fornecedor:e.target.value})}/><Sel label="Unidade" value={form.unidade||"kg"} onChange={e=>F({unidade:e.target.value})}><option value="kg">kg</option><option value="L">L</option><option value="m">m</option><option value="un">un</option></Sel>
+        <Inp label="Saldo" type="number" value={form.saldo||0} onChange={e=>F({saldo:e.target.value})}/><Inp label="Custo Unit." type="number" step="0.01" value={form.custo_unit||0} onChange={e=>F({custo_unit:e.target.value})}/>
+        <Inp label="Mínimo" type="number" value={form.minimo||0} onChange={e=>F({minimo:e.target.value})}/><Inp label="Máximo" type="number" value={form.maximo||0} onChange={e=>F({maximo:e.target.value})}/>
+      </G2><MFoot onCancel={()=>setModal(false)} onSave={saveItem} saving={saving} label={edit?"Atualizar":"Criar"}/>
+    </Modal>}
+    {movModal&&<Modal title="Registrar Movimentação" onClose={()=>setMovModal(false)}>
+      <G2><Sel label="Tipo" value={movForm.tipo} onChange={e=>MFm({tipo:e.target.value})}><option value="entrada">Entrada</option><option value="saida">Saída</option></Sel>
+        <Sel label="Item" value={movForm.mp_codigo||""} onChange={e=>MFm({mp_codigo:e.target.value})}><option value="">Selecione...</option>{estoque.map(e=><option key={e.id} value={e.codigo}>{e.codigo}</option>)}</Sel>
+        <Inp label="Quantidade" type="number" value={movForm.quantidade||""} onChange={e=>MFm({quantidade:e.target.value})}/><Inp label="OP (opcional)" value={movForm.op||""} onChange={e=>MFm({op:e.target.value})}/>
+        <Full><Inp label="Motivo" value={movForm.motivo||""} onChange={e=>MFm({motivo:e.target.value})}/></Full>
+        <Full><Inp label="Usuário" value={movForm.usuario||""} onChange={e=>MFm({usuario:e.target.value})}/></Full>
+      </G2><MFoot onCancel={()=>setMovModal(false)} onSave={saveMov} saving={saving} label="Registrar"/>
+    </Modal>}
+  </div>;
+}
+
+// ─── QUALIDADE ────────────────────────────────────────────────────────────────
+function ViewQualidade({showToast}){
+  const {data:qualidade,loading,error,reload}=useTable("qualidade");
+  const {data:ordens}=useTable("ordens_producao");
+  const [modal,setModal]=useState(false);
+  const [form,setForm]=useState({resultado:"aprovado",nc:0});
+  const [saving,setSaving]=useState(false);
+  const F=v=>setForm(f=>({...f,...v}));
+  const ops=ordens.filter(o=>["em_producao","concluida"].includes(o.status));
+  const totalInsp=qualidade.reduce((s,q)=>s+q.qtd_insp,0);
+  const totalNC=qualidade.reduce((s,q)=>s+q.nc,0);
+  const pareto=[...new Set(qualidade.filter(q=>q.tipo_nc).map(q=>q.tipo_nc))].map(t=>({t,n:qualidade.filter(q=>q.tipo_nc===t).reduce((s,q)=>s+q.nc,0)})).sort((a,b)=>b.n-a.n);
+  async function save(){if(!form.op)return showToast("Selecione uma OP","error");setSaving(true);const{error:e}=await dbIns("qualidade",{...form,qtd_insp:Number(form.qtd_insp||0),nc:Number(form.nc||0),data:TODAY});e?showToast("Erro: "+e.message,"error"):(showToast("Registrado","success"),await reload());setSaving(false);setModal(false);setForm({resultado:"aprovado",nc:0});}
+  if(loading)return <Spinner/>;if(error)return <ErrBox msg={error} onRetry={reload}/>;
+  return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:10}}>
+      <KCard label="Total Inspecionado" value={fmt(totalInsp)} color={C.text} icon="🔍"/>
+      <KCard label="Aprovadas" value={qualidade.filter(q=>q.resultado==="aprovado").length} color={C.green} icon="✅"/>
+      <KCard label="Reprovadas" value={qualidade.filter(q=>q.resultado==="reprovado").length} color={qualidade.filter(q=>q.resultado==="reprovado").length>0?C.red:C.green} icon="❌"/>
+      <KCard label="Taxa NC" value={totalInsp>0?`${((totalNC/totalInsp)*100).toFixed(2)}%`:"—"} color={C.text} icon="📊"/>
+    </div>
+    <div style={{display:"flex",justifyContent:"flex-end"}}><Btn onClick={()=>setModal(true)}>+ Registrar Inspeção</Btn></div>
+    <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:14}}>
+      <Section title="Histórico de Inspeções"><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+        <thead><tr><Th>Data</Th><Th>OP</Th><Th>Inspetor</Th><Th>Insp.</Th><Th>NC</Th><Th>Tipo</Th><Th>Resultado</Th><Th>Ação</Th></tr></thead>
+        <tbody>{qualidade.map((q,i)=><tr key={q.id} style={{borderTop:`1px solid ${C.border}`,background:i%2?C.bg:C.surface}}>
+          <Td style={{color:C.muted,whiteSpace:"nowrap"}}>{fmtD(q.data)}</Td>
+          <Td><span style={{fontWeight:700,color:C.accent}}>{q.op}</span></Td>
+          <Td>{q.inspetor}</Td><Td style={{fontWeight:700}}>{q.qtd_insp}</Td>
+          <Td><span style={{color:q.nc>0?C.red:C.green,fontWeight:700}}>{q.nc}</span></Td>
+          <Td style={{color:C.muted,fontSize:12}}>{q.tipo_nc||"—"}</Td>
+          <Td><span style={{fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:20,color:q.resultado==="aprovado"?C.green:C.red,background:q.resultado==="aprovado"?C.greenLight:C.redLight}}>{q.resultado==="aprovado"?"Aprovado":"Reprovado"}</span></Td>
+          <Td style={{fontSize:12,color:C.muted,maxWidth:160}}>{q.acao||"—"}</Td>
+        </tr>)}</tbody></table></div></Section>
+      <Section title="Pareto de NCs"><div style={{padding:"14px 20px",display:"flex",flexDirection:"column",gap:10}}>
+        {pareto.length===0&&<div style={{color:C.muted,fontSize:13,textAlign:"center",padding:12}}>Sem dados</div>}
+        {pareto.map(r=><div key={r.t}><div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}><span style={{fontWeight:600}}>{r.t}</span><span style={{color:C.red,fontWeight:700}}>{r.n}</span></div><MiniBar val={r.n} max={pareto[0]?.n||1} color={C.red} h={6}/></div>)}
+      </div></Section>
+    </div>
+    {modal&&<Modal title="Registrar Inspeção" onClose={()=>setModal(false)}>
+      <G2><Full><Sel label="Ordem de Produção" value={form.op||""} onChange={e=>F({op:e.target.value})}><option value="">Selecione...</option>{ops.map(o=><option key={o.id} value={o.codigo}>{o.codigo} — {o.produto}</option>)}</Sel></Full>
+        <Inp label="Inspetor" value={form.inspetor||""} onChange={e=>F({inspetor:e.target.value})}/><Inp label="Qtd Inspecionada" type="number" value={form.qtd_insp||""} onChange={e=>F({qtd_insp:e.target.value})}/>
+        <Inp label="Qtd NC" type="number" value={form.nc} onChange={e=>F({nc:e.target.value})}/><Sel label="Tipo NC" value={form.tipo_nc||""} onChange={e=>F({tipo_nc:e.target.value})}><option value="">Sem NC</option><option>Dimensional</option><option>Acabamento</option><option>Superfície</option><option>Material</option><option>Montagem</option></Sel>
+        <Full><Sel label="Resultado" value={form.resultado} onChange={e=>F({resultado:e.target.value})}><option value="aprovado">Aprovado</option><option value="reprovado">Reprovado</option></Sel></Full>
+        <Full><Inp label="Ação Corretiva" value={form.acao||""} onChange={e=>F({acao:e.target.value})}/></Full>
+      </G2><MFoot onCancel={()=>setModal(false)} onSave={save} saving={saving} label="Registrar"/>
+    </Modal>}
+  </div>;
+}
+
+// ─── COMPRAS ──────────────────────────────────────────────────────────────────
+function ViewCompras({showToast}){
+  const {data:fornecedores,loading:lf,error:ef,reload:rf}=useTable("fornecedores");
+  const {data:requisicoes,loading:lr,reload:rr}=useTable("requisicoes_compra");
+  const {data:pedidos,loading:lp,reload:rp}=useTable("pedidos_compra");
+  const [tab,setTab]=useState("pedidos");
+  const [modal,setModal]=useState(null);
+  const [form,setForm]=useState({});
+  const [saving,setSaving]=useState(false);
+  const F=v=>setForm(f=>({...f,...v}));
+  if(lf||lr||lp)return <Spinner/>;if(ef)return <ErrBox msg={ef} onRetry={rf}/>;
+
+  const pedidosAbertos=pedidos.filter(p=>["enviado","confirmado","em_transito"].includes(p.status));
+  const valorEmAberto=pedidosAbertos.reduce((s,p)=>s+(p.valor_total||p.quantidade*p.valor_unit),0);
+  const reqAbertas=requisicoes.filter(r=>r.status==="aberta").length;
+
+  async function saveForn(){if(!form.razao_social)return showToast("Preencha razão social","error");setSaving(true);const{error:e}=await dbIns("fornecedores",{...form,avaliacao:Number(form.avaliacao||3),prazo_entrega:Number(form.prazo_entrega||7)});e?showToast("Erro: "+e.message,"error"):(showToast("Fornecedor criado","success"),await rf());setSaving(false);setModal(null);}
+  async function saveReq(){if(!form.descricao||!form.quantidade)return showToast("Preencha descrição e quantidade","error");setSaving(true);const{error:e}=await dbIns("requisicoes_compra",{...form,quantidade:Number(form.quantidade),numero:`RC-${new Date().getFullYear()}-${String(requisicoes.length+1).padStart(3,"0")}`});e?showToast("Erro: "+e.message,"error"):(showToast("Requisição criada","success"),await rr());setSaving(false);setModal(null);}
+  async function savePed(){if(!form.fornecedor_id||!form.quantidade)return showToast("Preencha fornecedor e quantidade","error");setSaving(true);const{error:e}=await dbIns("pedidos_compra",{...form,quantidade:Number(form.quantidade),valor_unit:Number(form.valor_unit||0),fornecedor_id:Number(form.fornecedor_id),numero:`PC-${new Date().getFullYear()}-${String(pedidos.length+1).padStart(3,"0")}`});e?showToast("Erro: "+e.message,"error"):(showToast("Pedido criado","success"),await rp());setSaving(false);setModal(null);}
+  async function updatePedStatus(id,status){await dbUpd("pedidos_compra",id,{status,data_recebimento:status==="recebido"?TODAY:null});showToast("Status atualizado","success");rp();}
+
+  return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:10}}>
+      <KCard label="Pedidos Abertos" value={pedidosAbertos.length} color={C.teal} icon="🛒"/>
+      <KCard label="Valor em Aberto" value={fmtR(valorEmAberto)} color={C.text} icon="💰"/>
+      <KCard label="Requisições" value={reqAbertas} sub="aguardando aprovação" color={reqAbertas>0?C.amber:C.green} icon="📋"/>
+      <KCard label="Fornecedores" value={fornecedores.length} sub="cadastrados" color={C.text} icon="🏢"/>
+    </div>
+    <Tabs tabs={[{key:"pedidos",label:"Pedidos de Compra"},{key:"requisicoes",label:"Requisições"},{key:"fornecedores",label:"Fornecedores"}]} active={tab} onChange={setTab}/>
+
+    {tab==="pedidos"&&<>
+      <div style={{display:"flex",justifyContent:"flex-end"}}><Btn onClick={()=>{setForm({status:"enviado"});setModal("pedido");}}>+ Novo Pedido</Btn></div>
+      <Section title={`${pedidos.length} pedidos`}><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:900}}>
+        <thead><tr><Th>Número</Th><Th>Descrição</Th><Th>Fornecedor</Th><Th>Qtd</Th><Th>Valor Total</Th><Th>Previsão</Th><Th>Status</Th><Th>Ações</Th></tr></thead>
+        <tbody>{pedidos.map((p,i)=>{const forn=fornecedores.find(f=>f.id===p.fornecedor_id);return<tr key={p.id} style={{borderTop:`1px solid ${C.border}`,background:i%2?C.bg:C.surface}}>
+          <Td><span style={{fontWeight:800,color:C.teal,fontSize:12}}>{p.numero}</span></Td>
+          <Td style={{fontWeight:600}}>{p.descricao}</Td>
+          <Td style={{color:C.muted}}>{forn?.razao_social||"—"}</Td>
+          <Td style={{fontWeight:700}}>{fmt(p.quantidade)} {p.unidade}</Td>
+          <Td style={{fontWeight:700}}>{fmtR((p.valor_total||p.quantidade*p.valor_unit))}</Td>
+          <Td style={{color:C.muted,whiteSpace:"nowrap"}}>{fmtD(p.previsao_entrega)}</Td>
+          <Td><Badge status={p.status} map={STATUS_PC}/></Td>
+          <Td><div style={{display:"flex",gap:4}}>
+            {p.status==="enviado"&&<Btn size="sm" variant="amber" onClick={()=>updatePedStatus(p.id,"confirmado")}>Confirmar</Btn>}
+            {p.status==="confirmado"&&<Btn size="sm" variant="amber" onClick={()=>updatePedStatus(p.id,"em_transito")}>Enviar</Btn>}
+            {p.status==="em_transito"&&<Btn size="sm" variant="success" onClick={()=>updatePedStatus(p.id,"recebido")}>Receber</Btn>}
+          </div></Td>
+        </tr>;})}
+        </tbody></table></div></Section>
+    </>}
+
+    {tab==="requisicoes"&&<>
+      <div style={{display:"flex",justifyContent:"flex-end"}}><Btn onClick={()=>{setForm({urgencia:"normal",status:"aberta",unidade:"kg"});setModal("requisicao");}}>+ Nova Requisição</Btn></div>
+      <Section title={`${requisicoes.length} requisições`}><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+        <thead><tr><Th>Número</Th><Th>Descrição</Th><Th>Qtd</Th><Th>Urgência</Th><Th>Status</Th><Th>Solicitante</Th><Th>Necessidade</Th></tr></thead>
+        <tbody>{requisicoes.map((r,i)=><tr key={r.id} style={{borderTop:`1px solid ${C.border}`,background:i%2?C.bg:C.surface}}>
+          <Td><span style={{fontWeight:800,color:C.accent,fontSize:12}}>{r.numero}</span></Td>
+          <Td style={{fontWeight:600}}>{r.descricao}</Td>
+          <Td style={{fontWeight:700}}>{fmt(r.quantidade)} {r.unidade}</Td>
+          <Td><PrioDot p={r.urgencia}/></Td>
+          <Td><span style={{fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:20,color:{aberta:C.amber,cotando:C.accent,aprovada:C.green,cancelada:C.red}[r.status],background:{aberta:C.amberLight,cotando:C.accentLight,aprovada:C.greenLight,cancelada:C.redLight}[r.status]}}>{r.status}</span></Td>
+          <Td style={{color:C.muted}}>{r.solicitante}</Td>
+          <Td style={{color:C.muted,whiteSpace:"nowrap"}}>{fmtD(r.data_necessidade)}</Td>
+        </tr>)}
+        </tbody></table></div></Section>
+    </>}
+
+    {tab==="fornecedores"&&<>
+      <div style={{display:"flex",justifyContent:"flex-end"}}><Btn onClick={()=>{setForm({avaliacao:3,prazo_entrega:7,ativo:true});setModal("fornecedor");}}>+ Novo Fornecedor</Btn></div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
+        {fornecedores.map(f=><div key={f.id} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:18}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+            <div><div style={{fontWeight:800,fontSize:14}}>{f.razao_social}</div><div style={{fontSize:12,color:C.muted}}>{f.categoria} · CNPJ: {f.cnpj||"—"}</div></div>
+            <Stars n={f.avaliacao}/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,fontSize:12,color:C.muted}}>
+            <div>📧 {f.email||"—"}</div>
+            <div>📞 {f.telefone||"—"}</div>
+            <div>⏱ Prazo: {f.prazo_entrega} dias</div>
+            <div style={{color:f.ativo?C.green:C.red,fontWeight:700}}>{f.ativo?"✓ Ativo":"✗ Inativo"}</div>
+          </div>
+        </div>)}
+      </div>
+    </>}
+
+    {modal==="pedido"&&<Modal title="Novo Pedido de Compra" onClose={()=>setModal(null)}>
+      <G2><Sel label="Fornecedor" value={form.fornecedor_id||""} onChange={e=>F({fornecedor_id:e.target.value})}><option value="">Selecione...</option>{fornecedores.map(f=><option key={f.id} value={f.id}>{f.razao_social}</option>)}</Sel>
+        <Inp label="Código MP" value={form.mp_codigo||""} onChange={e=>F({mp_codigo:e.target.value})}/>
+        <Full><Inp label="Descrição do Item" value={form.descricao||""} onChange={e=>F({descricao:e.target.value})}/></Full>
+        <Inp label="Quantidade" type="number" value={form.quantidade||""} onChange={e=>F({quantidade:e.target.value})}/><Inp label="Valor Unit. (R$)" type="number" step="0.01" value={form.valor_unit||""} onChange={e=>F({valor_unit:e.target.value})}/>
+        <Inp label="Previsão de Entrega" type="date" value={form.previsao_entrega||""} onChange={e=>F({previsao_entrega:e.target.value})}/>
+        <Sel label="Status" value={form.status||"enviado"} onChange={e=>F({status:e.target.value})}><option value="enviado">Enviado</option><option value="confirmado">Confirmado</option><option value="em_transito">Em Trânsito</option></Sel>
+      </G2><MFoot onCancel={()=>setModal(null)} onSave={savePed} saving={saving} label="Criar Pedido"/>
+    </Modal>}
+    {modal==="requisicao"&&<Modal title="Nova Requisição de Compra" onClose={()=>setModal(null)}>
+      <G2><Inp label="Código MP (opcional)" value={form.mp_codigo||""} onChange={e=>F({mp_codigo:e.target.value})}/><Sel label="Urgência" value={form.urgencia||"normal"} onChange={e=>F({urgencia:e.target.value})}><option value="normal">Normal</option><option value="alta">Alta</option><option value="critica">Crítica</option></Sel>
+        <Full><Inp label="Descrição do Item" value={form.descricao||""} onChange={e=>F({descricao:e.target.value})}/></Full>
+        <Inp label="Quantidade" type="number" value={form.quantidade||""} onChange={e=>F({quantidade:e.target.value})}/><Sel label="Unidade" value={form.unidade||"kg"} onChange={e=>F({unidade:e.target.value})}><option value="kg">kg</option><option value="L">L</option><option value="un">un</option></Sel>
+        <Inp label="Solicitante" value={form.solicitante||""} onChange={e=>F({solicitante:e.target.value})}/><Inp label="Data Necessidade" type="date" value={form.data_necessidade||""} onChange={e=>F({data_necessidade:e.target.value})}/>
+        <Full><Inp label="Motivo" value={form.motivo||""} onChange={e=>F({motivo:e.target.value})}/></Full>
+      </G2><MFoot onCancel={()=>setModal(null)} onSave={saveReq} saving={saving} label="Criar Requisição"/>
+    </Modal>}
+    {modal==="fornecedor"&&<Modal title="Novo Fornecedor" onClose={()=>setModal(null)}>
+      <G2><Full><Inp label="Razão Social" value={form.razao_social||""} onChange={e=>F({razao_social:e.target.value})}/></Full>
+        <Inp label="CNPJ" value={form.cnpj||""} onChange={e=>F({cnpj:e.target.value})}/><Inp label="Categoria" value={form.categoria||""} onChange={e=>F({categoria:e.target.value})}/>
+        <Inp label="Contato" value={form.contato||""} onChange={e=>F({contato:e.target.value})}/><Inp label="Email" type="email" value={form.email||""} onChange={e=>F({email:e.target.value})}/>
+        <Inp label="Telefone" value={form.telefone||""} onChange={e=>F({telefone:e.target.value})}/><Inp label="Prazo Entrega (dias)" type="number" value={form.prazo_entrega||7} onChange={e=>F({prazo_entrega:e.target.value})}/>
+        <Sel label="Avaliação" value={form.avaliacao||3} onChange={e=>F({avaliacao:e.target.value})}>{[1,2,3,4,5].map(n=><option key={n} value={n}>{"★".repeat(n)} ({n}/5)</option>)}</Sel>
+      </G2><MFoot onCancel={()=>setModal(null)} onSave={saveForn} saving={saving} label="Criar Fornecedor"/>
+    </Modal>}
+  </div>;
+}
+
+// ─── RH ───────────────────────────────────────────────────────────────────────
+function ViewRH({showToast}){
+  const {data:funcs,loading,error,reload}=useTable("funcionarios");
+  const {data:pontos,reload:reloadP}=useTable("registros_ponto");
+  const {data:escalas}=useTable("escalas");
+  const [tab,setTab]=useState("funcionarios");
+  const [modal,setModal]=useState(null);
+  const [form,setForm]=useState({turno:"manhã",ativo:true});
+  const [pontoForm,setPontoForm]=useState({});
+  const [saving,setSaving]=useState(false);
+  const F=v=>setForm(f=>({...f,...v}));
+  const PF=v=>setPontoForm(f=>({...f,...v}));
+  if(loading)return <Spinner/>;if(error)return <ErrBox msg={error} onRetry={reload}/>;
+
+  const funcsAtivos=funcs.filter(f=>f.ativo).length;
+  const centros=[...new Set(funcs.map(f=>f.centro).filter(Boolean))];
+  const folhaMensal=funcs.filter(f=>f.ativo).reduce((s,f)=>s+f.salario,0);
+  const pontosHoje=pontos.filter(p=>p.data===TODAY).length;
+
+  async function saveFunc(){if(!form.nome)return showToast("Preencha o nome","error");setSaving(true);const{error:e}=await dbIns("funcionarios",{...form,salario:Number(form.salario||0),avatar:form.nome.split(" ").map(n=>n[0]).join("").substring(0,2).toUpperCase(),matricula:form.matricula||`M-${String(funcs.length+1).padStart(3,"0")}`});e?showToast("Erro: "+e.message,"error"):(showToast("Funcionário criado","success"),await reload());setSaving(false);setModal(null);}
+  async function savePonto(){if(!pontoForm.funcionario_id)return showToast("Selecione o funcionário","error");setSaving(true);const{error:e}=await dbIns("registros_ponto",{...pontoForm,funcionario_id:Number(pontoForm.funcionario_id),horas_extras:Number(pontoForm.horas_extras||0),data:TODAY});e?showToast("Erro: "+e.message,"error"):(showToast("Ponto registrado","success"),await reloadP());setSaving(false);setModal(null);setPontoForm({});}
+
+  const horasPorFunc=funcs.map(f=>{const pts=pontos.filter(p=>p.funcionario_id===f.id);const total=pts.reduce((s,p)=>s+(p.horas_trabalhadas||0),0);const extras=pts.reduce((s,p)=>s+(p.horas_extras||0),0);return{...f,total_horas:total,total_extras:extras,dias:pts.length};});
+
+  return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:10}}>
+      <KCard label="Funcionários Ativos" value={funcsAtivos} sub={`de ${funcs.length} total`} color={C.text} icon="👤"/>
+      <KCard label="Folha Mensal" value={fmtR(folhaMensal)} sub="salários base" color={C.text} icon="💰"/>
+      <KCard label="Pontos Hoje" value={pontosHoje} sub="registros" color={C.accent} icon="🕐"/>
+      <KCard label="Centros" value={centros.length} sub="de trabalho" color={C.text} icon="🏭"/>
+    </div>
+    <Tabs tabs={[{key:"funcionarios",label:"Funcionários"},{key:"ponto",label:"Registros de Ponto"},{key:"produtividade",label:"Produtividade"}]} active={tab} onChange={setTab}/>
+
+    {tab==="funcionarios"&&<>
+      <div style={{display:"flex",justifyContent:"flex-end"}}><Btn onClick={()=>{setForm({turno:"manhã",ativo:true});setModal("func");}}>+ Novo Funcionário</Btn></div>
+      <Section title={`${funcs.length} funcionários`}><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:800}}>
         <thead><tr><Th>Matrícula</Th><Th>Nome</Th><Th>Cargo</Th><Th>Centro</Th><Th>Turno</Th><Th>Salário</Th><Th>Status</Th></tr></thead>
         <tbody>{funcs.map((f,i)=><tr key={f.id} style={{borderTop:`1px solid ${C.border}`,background:i%2?C.bg:C.surface}}>
-          <Td><span style={{fontWeight:700,color:C.accent,fontSize:12}}>{f.matricula}</span></Td>
-          <Td><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:28,height:28,borderRadius:"50%",background:C.accentLight,color:C.accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800}}>{f.avatar}</div><span style={{fontWeight:700}}>{f.nome}</span></div></Td>
+          <Td><span style={{fontWeight:800,color:C.accent,fontSize:12}}>{f.matricula}</span></Td>
+          <Td><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:28,height:28,borderRadius:"50%",background:C.accentLight,color:C.accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,flexShrink:0}}>{f.avatar}</div><span style={{fontWeight:700}}>{f.nome}</span></div></Td>
           <Td style={{color:C.muted}}>{f.cargo}</Td><Td style={{color:C.muted}}>{f.centro}</Td>
-          <Td style={{color:C.muted,textTransform:"capitalize"}}>{f.turno}</Td>
+          <Td style={{textTransform:"capitalize",color:C.muted}}>{f.turno}</Td>
           <Td style={{fontWeight:700}}>{fmtR(f.salario)}</Td>
           <Td><span style={{fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:20,color:f.ativo?C.green:C.red,background:f.ativo?C.greenLight:C.redLight}}>{f.ativo?"Ativo":"Inativo"}</span></Td>
-        </tr>)}</tbody>
-      </table></div></Section></>}
-    {tab==="ponto"&&<><div style={{display:"flex",justifyContent:"flex-end"}}><Btn onClick={()=>setModal("ponto")}>+ Registrar Ponto</Btn></div>
-      <Section title={`${pontos.length} registros`}><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:700}}>
-        <thead><tr><Th>Data</Th><Th>Funcionário</Th><Th>Entrada</Th><Th>Saída</Th><Th>Horas Extras</Th></tr></thead>
+        </tr>)}
+        </tbody></table></div></Section>
+    </>}
+
+    {tab==="ponto"&&<>
+      <div style={{display:"flex",justifyContent:"flex-end"}}><Btn onClick={()=>setModal("ponto")}>+ Registrar Ponto</Btn></div>
+      <Section title={`${pontos.length} registros`}><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:800}}>
+        <thead><tr><Th>Data</Th><Th>Funcionário</Th><Th>Entrada</Th><Th>Almoço</Th><Th>Saída</Th><Th>Horas</Th><Th>Extras</Th></tr></thead>
         <tbody>{pontos.map((p,i)=>{const f=funcs.find(f=>f.id===p.funcionario_id);return<tr key={p.id} style={{borderTop:`1px solid ${C.border}`,background:i%2?C.bg:C.surface}}>
-          <Td style={{color:C.muted}}>{fmtD(p.data)}</Td><Td style={{fontWeight:700}}>{f?.nome||"—"}</Td>
-          <Td style={{color:C.green,fontWeight:600}}>{p.entrada||"—"}</Td><Td style={{color:C.red,fontWeight:600}}>{p.saida||"—"}</Td>
+          <Td style={{color:C.muted,whiteSpace:"nowrap"}}>{fmtD(p.data)}</Td>
+          <Td style={{fontWeight:700}}>{f?.nome||"—"}</Td>
+          <Td style={{color:C.green,fontWeight:600}}>{p.entrada||"—"}</Td>
+          <Td style={{color:C.muted,fontSize:12}}>{p.saida_almoco&&p.retorno_almoco?`${p.saida_almoco}–${p.retorno_almoco}`:"—"}</Td>
+          <Td style={{color:C.red,fontWeight:600}}>{p.saida||"—"}</Td>
+          <Td><span style={{fontWeight:700}}>{p.horas_trabalhadas?Number(p.horas_trabalhadas).toFixed(1)+"h":"—"}</span></Td>
           <Td><span style={{color:p.horas_extras>0?C.amber:C.muted,fontWeight:700}}>{p.horas_extras>0?`+${p.horas_extras}h`:"—"}</span></Td>
-        </tr>})}</tbody>
-      </table></div></Section></>}
+        </tr>;})}
+        </tbody></table></div></Section>
+    </>}
+
+    {tab==="produtividade"&&<Section title="Produtividade por Funcionário"><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+      <thead><tr><Th>Funcionário</Th><Th>Cargo</Th><Th>Centro</Th><Th>Dias</Th><Th>Total Horas</Th><Th>Extras</Th><Th>Salário</Th></tr></thead>
+      <tbody>{horasPorFunc.map((f,i)=><tr key={f.id} style={{borderTop:`1px solid ${C.border}`,background:i%2?C.bg:C.surface}}>
+        <Td><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:28,height:28,borderRadius:"50%",background:C.accentLight,color:C.accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800}}>{f.avatar}</div><span style={{fontWeight:700}}>{f.nome}</span></div></Td>
+        <Td style={{color:C.muted}}>{f.cargo}</Td><Td style={{color:C.muted}}>{f.centro}</Td>
+        <Td style={{fontWeight:700,textAlign:"center"}}>{f.dias}</Td>
+        <Td style={{fontWeight:700}}>{f.total_horas?Number(f.total_horas).toFixed(1)+"h":"—"}</Td>
+        <Td><span style={{color:f.total_extras>0?C.amber:C.muted,fontWeight:700}}>{f.total_extras>0?`+${Number(f.total_extras).toFixed(1)}h`:"—"}</span></Td>
+        <Td style={{fontWeight:700}}>{fmtR(f.salario)}</Td>
+      </tr>)}</tbody></table></div></Section>}
+
     {modal==="func"&&<Modal title="Novo Funcionário" onClose={()=>setModal(null)}>
       <G2><Full><Inp label="Nome Completo" value={form.nome||""} onChange={e=>F({nome:e.target.value})}/></Full>
-        <Inp label="Cargo" value={form.cargo||""} onChange={e=>F({cargo:e.target.value})}/><Inp label="Centro" value={form.centro||""} onChange={e=>F({centro:e.target.value})}/>
+        <Inp label="Cargo" value={form.cargo||""} onChange={e=>F({cargo:e.target.value})}/>
+        <Inp label="Centro de Trabalho" value={form.centro||""} onChange={e=>F({centro:e.target.value})}/>
         <Sel label="Turno" value={form.turno} onChange={e=>F({turno:e.target.value})}><option value="manhã">Manhã</option><option value="tarde">Tarde</option><option value="noite">Noite</option></Sel>
-        <Inp label="Salário (R$)" type="number" value={form.salario||""} onChange={e=>F({salario:e.target.value})}/>
+        <Inp label="Salário (R$)" type="number" step="0.01" value={form.salario||""} onChange={e=>F({salario:e.target.value})}/>
         <Inp label="Data de Admissão" type="date" value={form.admissao||""} onChange={e=>F({admissao:e.target.value})}/>
-      </G2><MFoot onCancel={()=>setModal(null)} onSave={saveFunc} saving={saving} label="Criar"/>
+        <Full><div style={{display:"flex",alignItems:"center",gap:10}}><input type="checkbox" checked={form.ativo!==false} onChange={e=>F({ativo:e.target.checked})} style={{width:16,height:16}}/><label style={{fontSize:14,fontWeight:600}}>Funcionário ativo</label></div></Full>
+      </G2><MFoot onCancel={()=>setModal(null)} onSave={saveFunc} saving={saving} label="Criar Funcionário"/>
     </Modal>}
     {modal==="ponto"&&<Modal title="Registrar Ponto" onClose={()=>setModal(null)}>
-      <G2><Full><Sel label="Funcionário" value={pontoForm.funcionario_id||""} onChange={e=>PF({funcionario_id:e.target.value})}><option value="">Selecione...</option>{funcs.filter(f=>f.ativo).map(f=><option key={f.id} value={f.id}>{f.nome}</option>)}</Sel></Full>
+      <G2><Full><Sel label="Funcionário" value={pontoForm.funcionario_id||""} onChange={e=>PF({funcionario_id:e.target.value})}><option value="">Selecione...</option>{funcs.filter(f=>f.ativo).map(f=><option key={f.id} value={f.id}>{f.nome} — {f.turno}</option>)}</Sel></Full>
         <Inp label="Entrada" type="time" value={pontoForm.entrada||""} onChange={e=>PF({entrada:e.target.value})}/><Inp label="Saída" type="time" value={pontoForm.saida||""} onChange={e=>PF({saida:e.target.value})}/>
+        <Inp label="Saída Almoço" type="time" value={pontoForm.saida_almoco||""} onChange={e=>PF({saida_almoco:e.target.value})}/><Inp label="Retorno Almoço" type="time" value={pontoForm.retorno_almoco||""} onChange={e=>PF({retorno_almoco:e.target.value})}/>
         <Inp label="Horas Extras" type="number" step="0.5" value={pontoForm.horas_extras||0} onChange={e=>PF({horas_extras:e.target.value})}/><Inp label="Ocorrência" value={pontoForm.ocorrencia||""} onChange={e=>PF({ocorrencia:e.target.value})}/>
       </G2><MFoot onCancel={()=>setModal(null)} onSave={savePonto} saving={saving} label="Registrar"/>
     </Modal>}
-  </div>
+  </div>;
 }
 
 // ── USUÁRIOS ─────────────────────────────────────────────────────────────────
@@ -541,7 +846,11 @@ function ViewUsuarios({user,setUser,showToast}) {
 const NAV=[
   {id:"dashboard",   label:"Dashboard",     icon:"▦",  group:"geral"},
   {id:"ordens",      label:"Ordens",        icon:"📋", group:"producao"},
+  {id:"apontamentos",label:"Apontamentos",  icon:"📝", group:"producao"},
+  {id:"oee",         label:"OEE",           icon:"⚙️", group:"producao"},
+  {id:"qualidade",   label:"Qualidade",     icon:"🔍", group:"producao"},
   {id:"estoque",     label:"Estoque MP",    icon:"📦", group:"suprimentos"},
+  {id:"compras",     label:"Compras",       icon:"🛒", group:"suprimentos"},
   {id:"financeiro",  label:"Financeiro",    icon:"💰", group:"gestao"},
   {id:"rh",          label:"RH / Ponto",    icon:"👤", group:"gestao"},
   {id:"usuarios",    label:"Usuários",      icon:"🔐", group:"config"},
@@ -594,7 +903,11 @@ export default function App() {
       <div style={{padding:22,flex:1,overflowY:"auto"}}>
         {page==="dashboard" &&<ViewDashboard user={user}/>}
         {page==="ordens"    &&<ViewOrdens showToast={showToast}/>}
+        {page==="apontamentos"&&<ViewApontamentos showToast={showToast}/>}
+        {page==="oee"       &&<ViewOEE showToast={showToast}/>}
+        {page==="qualidade" &&<ViewQualidade showToast={showToast}/>}
         {page==="estoque"   &&<ViewEstoque showToast={showToast}/>}
+        {page==="compras"   &&<ViewCompras showToast={showToast}/>}
         {page==="financeiro"&&<ViewFinanceiro showToast={showToast}/>}
         {page==="rh"        &&<ViewRH showToast={showToast}/>}
         {page==="usuarios"  &&<ViewUsuarios user={user} setUser={setUser} showToast={showToast}/>}
