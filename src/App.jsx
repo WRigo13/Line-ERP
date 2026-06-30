@@ -807,6 +807,673 @@ function ViewRH({showToast}){
   </div>;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// PCP AVANÇADO — Plano Mestre (MPS), MRP, Capacidade Planejada
+// Cole antes de "// ── USUÁRIOS" no App.jsx
+// ═══════════════════════════════════════════════════════════════════════════
+
+function ViewPCP({ showToast }) {
+  const { data: produtos, loading: l1, error: e1, reload: r1 } = useTable("produtos");
+  const { data: mps, reload: reloadMps } = useTable("plano_mestre");
+  const { data: capacidade, reload: reloadCap } = useTable("capacidade_planejada");
+  const { data: estrutura } = useTable("estrutura_produto");
+  const { data: estoqueMp } = useTable("estoque_mp");
+
+  const [tab, setTab] = useState("mps");
+  const [modal, setModal] = useState(null);
+  const [form, setForm] = useState({});
+  const [saving, setSaving] = useState(false);
+  const F = v => setForm(f => ({ ...f, ...v }));
+
+  if (l1) return <Spinner />;
+  if (e1) return <ErrBox msg={e1} onRetry={r1} />;
+
+  // ── MRP calculado dinamicamente a partir do MPS + estrutura ──────────────
+  const mrpCalculado = mps.flatMap(plano => {
+    const prod = produtos.find(p => p.id === plano.produto_id);
+    if (!prod) return [];
+    const comps = estrutura.filter(e => e.produto_pai_id === prod.id);
+    return comps.map(c => {
+      const mp = estoqueMp.find(e => e.codigo === c.componente_codigo);
+      const necessidadeBruta = plano.producao_planejada * c.quantidade;
+      const disponivel = mp?.saldo || 0;
+      const necessidadeLiquida = Math.max(0, necessidadeBruta - disponivel);
+      return {
+        id: `${plano.id}-${c.componente_codigo}`,
+        produto: prod.descricao,
+        periodo: plano.periodo,
+        mp_codigo: c.componente_codigo,
+        mp_descricao: mp?.descricao || c.componente_codigo,
+        unidade: c.unidade,
+        necessidade_bruta: necessidadeBruta,
+        disponivel,
+        necessidade_liquida: necessidadeLiquida,
+        critico: necessidadeLiquida > 0 && (mp?.saldo || 0) <= (mp?.minimo || 0),
+      };
+    });
+  });
+
+  const totalNecessidadesCriticas = mrpCalculado.filter(m => m.necessidade_liquida > 0).length;
+
+  async function saveMps() {
+    if (!form.produto_id || !form.periodo) return showToast("Preencha produto e período", "error");
+    setSaving(true);
+    const estoqueInicial = Number(form.estoque_inicial || 0);
+    const producao = Number(form.producao_planejada || 0);
+    const demanda = Number(form.demanda_prevista || 0);
+    const { error: e } = await dbIns("plano_mestre", {
+      ...form,
+      produto_id: Number(form.produto_id),
+      demanda_prevista: demanda,
+      estoque_inicial: estoqueInicial,
+      producao_planejada: producao,
+      estoque_final: estoqueInicial + producao - demanda,
+    });
+    e ? showToast("Erro: " + e.message, "error") : (showToast("Plano criado", "success"), await reloadMps());
+    setSaving(false);
+    setModal(null);
+  }
+
+  async function saveCapacidade() {
+    if (!form.centro || !form.periodo) return showToast("Preencha centro e período", "error");
+    setSaving(true);
+    const { error: e } = await dbIns("capacidade_planejada", {
+      ...form,
+      capacidade_disponivel: Number(form.capacidade_disponivel || 0),
+      demanda_calculada: Number(form.demanda_calculada || 0),
+    });
+    e ? showToast("Erro: " + e.message, "error") : (showToast("Capacidade registrada", "success"), await reloadCap());
+    setSaving(false);
+    setModal(null);
+  }
+
+  return <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 10 }}>
+      <KCard label="Produtos Cadastrados" value={produtos.length} color={C.text} icon="📦" />
+      <KCard label="Planos MPS Ativos" value={mps.length} color={C.accent} icon="📅" />
+      <KCard label="Itens MRP Críticos" value={totalNecessidadesCriticas} color={totalNecessidadesCriticas > 0 ? C.red : C.green} icon="⚠️" bg={totalNecessidadesCriticas > 0 ? C.redLight : C.surface} />
+      <KCard label="Centros Monitorados" value={[...new Set(capacidade.map(c => c.centro))].length} color={C.text} icon="🏭" />
+    </div>
+
+    <Tabs tabs={[
+      { key: "mps", label: "Plano Mestre (MPS)" },
+      { key: "mrp", label: "MRP — Necessidades" },
+      { key: "capacidade", label: "Capacidade Planejada" },
+      { key: "produtos", label: "Produtos & BOM" },
+    ]} active={tab} onChange={setTab} />
+
+    {/* ── PLANO MESTRE ─────────────────────────────────────────────── */}
+    {tab === "mps" && <>
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <Btn onClick={() => { setForm({ origem: "previsao", estoque_inicial: 0, demanda_prevista: 0, producao_planejada: 0 }); setModal("mps"); }}>+ Novo Plano</Btn>
+      </div>
+      <Section title="Planejamento Agregado de Produção">
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 800 }}>
+            <thead><tr><Th>Produto</Th><Th>Período</Th><Th>Demanda Prevista</Th><Th>Estoque Inicial</Th><Th>Produção Planejada</Th><Th>Estoque Final</Th><Th>Origem</Th></tr></thead>
+            <tbody>
+              {mps.map((m, i) => {
+                const prod = produtos.find(p => p.id === m.produto_id);
+                const critico = m.estoque_final < 0;
+                return <tr key={m.id} style={{ borderTop: `1px solid ${C.border}`, background: i % 2 ? C.bg : C.surface }}>
+                  <Td style={{ fontWeight: 700 }}>{prod?.descricao || "—"}</Td>
+                  <Td style={{ color: C.muted, whiteSpace: "nowrap" }}>{fmtD(m.periodo)}</Td>
+                  <Td>{fmt(m.demanda_prevista)}</Td>
+                  <Td style={{ color: C.muted }}>{fmt(m.estoque_inicial)}</Td>
+                  <Td style={{ fontWeight: 700, color: C.accent }}>{fmt(m.producao_planejada)}</Td>
+                  <Td><span style={{ fontWeight: 800, color: critico ? C.red : C.green }}>{fmt(m.estoque_final)}</span></Td>
+                  <Td><span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 20, color: m.origem === "pedido_firme" ? C.green : C.purple, background: m.origem === "pedido_firme" ? C.greenLight : C.purpleLight }}>{m.origem === "pedido_firme" ? "Pedido Firme" : "Previsão"}</span></Td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+    </>}
+
+    {/* ── MRP ──────────────────────────────────────────────────────── */}
+    {tab === "mrp" && <>
+      <div style={{ background: C.accentLight, border: `1px solid ${C.accentMid}`, borderRadius: 10, padding: "12px 16px", fontSize: 13, color: C.text }}>
+        📐 Necessidades calculadas automaticamente: <strong>Plano Mestre × Estrutura do Produto (BOM)</strong>, comparado ao estoque atual de matéria-prima.
+      </div>
+      <Section title={`${mrpCalculado.length} necessidades calculadas`}>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 900 }}>
+            <thead><tr><Th>Produto</Th><Th>Período</Th><Th>Matéria-Prima</Th><Th>Necessidade Bruta</Th><Th>Disponível</Th><Th>Necessidade Líquida</Th><Th>Status</Th></tr></thead>
+            <tbody>
+              {mrpCalculado.length === 0 && <tr><td colSpan={7} style={{ padding: 28, textAlign: "center", color: C.muted }}>Cadastre planos MPS e estrutura de produto para calcular o MRP</td></tr>}
+              {mrpCalculado.map((m, i) => <tr key={m.id} style={{ borderTop: `1px solid ${C.border}`, background: i % 2 ? C.bg : C.surface }}>
+                <Td style={{ fontWeight: 700 }}>{m.produto}</Td>
+                <Td style={{ color: C.muted, whiteSpace: "nowrap" }}>{fmtD(m.periodo)}</Td>
+                <Td>{m.mp_descricao} <span style={{ fontSize: 11, color: C.muted }}>({m.mp_codigo})</span></Td>
+                <Td>{fmt(m.necessidade_bruta.toFixed(1))} {m.unidade}</Td>
+                <Td style={{ color: C.muted }}>{fmt(m.disponivel)} {m.unidade}</Td>
+                <Td><span style={{ fontWeight: 800, color: m.necessidade_liquida > 0 ? C.red : C.green }}>{fmt(m.necessidade_liquida.toFixed(1))} {m.unidade}</span></Td>
+                <Td>{m.critico
+                  ? <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 20, color: C.red, background: C.redLight }}>🔴 Comprar urgente</span>
+                  : m.necessidade_liquida > 0
+                    ? <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 20, color: C.amber, background: C.amberLight }}>🟡 Requisitar</span>
+                    : <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 20, color: C.green, background: C.greenLight }}>✅ Atendido</span>}
+                </Td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+    </>}
+
+    {/* ── CAPACIDADE ───────────────────────────────────────────────── */}
+    {tab === "capacidade" && <>
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <Btn onClick={() => { setForm({}); setModal("capacidade"); }}>+ Novo Registro</Btn>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 14 }}>
+        {capacidade.map(c => {
+          const pct = c.capacidade_disponivel > 0 ? Math.round((c.demanda_calculada / c.capacidade_disponivel) * 100) : 0;
+          const col = pct >= 100 ? C.red : pct >= 85 ? C.amber : C.green;
+          const folga = c.capacidade_disponivel - c.demanda_calculada;
+          return <div key={c.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+              <div><div style={{ fontWeight: 800 }}>{c.centro}</div><div style={{ fontSize: 12, color: C.muted }}>{fmtD(c.periodo)}</div></div>
+              <div style={{ fontSize: 22, fontWeight: 900, color: col }}>{pct}%</div>
+            </div>
+            <MiniBar val={pct} max={100} color={col} />
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, fontSize: 12 }}>
+              <span style={{ color: C.muted }}>Capacidade: <b style={{ color: C.text }}>{c.capacidade_disponivel}h</b></span>
+              <span style={{ color: C.muted }}>Demanda: <b style={{ color: C.text }}>{c.demanda_calculada}h</b></span>
+            </div>
+            <div style={{ marginTop: 8, fontSize: 12, fontWeight: 700, color: folga >= 0 ? C.green : C.red }}>
+              {folga >= 0 ? `✅ Folga de ${folga}h` : `⚠️ Sobrecarga de ${Math.abs(folga)}h`}
+            </div>
+          </div>;
+        })}
+      </div>
+    </>}
+
+    {/* ── PRODUTOS & BOM ───────────────────────────────────────────── */}
+    {tab === "produtos" && <>
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <Btn onClick={() => { setForm({ tipo: "acabado", unidade: "UN", ativo: true }); setModal("produto"); }}>+ Novo Produto</Btn>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {produtos.map(p => {
+          const comps = estrutura.filter(e => e.produto_pai_id === p.id);
+          return <div key={p.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 15 }}>{p.codigo} — {p.descricao}</div>
+                <div style={{ fontSize: 12, color: C.muted }}>Lead time: {p.lead_time_dias} dias · Estoque segurança: {p.estoque_seguranca} {p.unidade}</div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontWeight: 800, color: C.green }}>{fmtR(p.preco_venda)}</div>
+                <div style={{ fontSize: 11, color: C.muted }}>custo: {fmtR(p.custo_padrao)}</div>
+              </div>
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Estrutura (BOM)</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {comps.length === 0 && <span style={{ fontSize: 12, color: C.faint }}>Sem componentes cadastrados</span>}
+              {comps.map(c => <span key={c.id} style={{ fontSize: 12, padding: "4px 10px", borderRadius: 20, background: C.bg, border: `1px solid ${C.border}` }}>{c.quantidade} {c.unidade} de {c.componente_codigo}</span>)}
+            </div>
+          </div>;
+        })}
+      </div>
+    </>}
+
+    {modal === "mps" && <Modal title="Novo Plano Mestre" onClose={() => setModal(null)}>
+      <G2>
+        <Full><Sel label="Produto" value={form.produto_id || ""} onChange={e => F({ produto_id: e.target.value })}>
+          <option value="">Selecione...</option>
+          {produtos.map(p => <option key={p.id} value={p.id}>{p.codigo} — {p.descricao}</option>)}
+        </Sel></Full>
+        <Inp label="Período (início da semana)" type="date" value={form.periodo || ""} onChange={e => F({ periodo: e.target.value })} />
+        <Sel label="Origem" value={form.origem || "previsao"} onChange={e => F({ origem: e.target.value })}>
+          <option value="previsao">Previsão de Demanda</option><option value="pedido_firme">Pedido Firme</option>
+        </Sel>
+        <Inp label="Demanda Prevista" type="number" value={form.demanda_prevista || 0} onChange={e => F({ demanda_prevista: e.target.value })} />
+        <Inp label="Estoque Inicial" type="number" value={form.estoque_inicial || 0} onChange={e => F({ estoque_inicial: e.target.value })} />
+        <Inp label="Produção Planejada" type="number" value={form.producao_planejada || 0} onChange={e => F({ producao_planejada: e.target.value })} />
+      </G2>
+      <MFoot onCancel={() => setModal(null)} onSave={saveMps} saving={saving} label="Criar Plano" />
+    </Modal>}
+
+    {modal === "capacidade" && <Modal title="Novo Registro de Capacidade" onClose={() => setModal(null)}>
+      <G2>
+        <Inp label="Centro de Trabalho" value={form.centro || ""} onChange={e => F({ centro: e.target.value })} />
+        <Inp label="Período" type="date" value={form.periodo || ""} onChange={e => F({ periodo: e.target.value })} />
+        <Inp label="Capacidade Disponível (h)" type="number" value={form.capacidade_disponivel || 0} onChange={e => F({ capacidade_disponivel: e.target.value })} />
+        <Inp label="Demanda Calculada (h)" type="number" value={form.demanda_calculada || 0} onChange={e => F({ demanda_calculada: e.target.value })} />
+      </G2>
+      <MFoot onCancel={() => setModal(null)} onSave={saveCapacidade} saving={saving} label="Registrar" />
+    </Modal>}
+
+    {modal === "produto" && <Modal title="Novo Produto" onClose={() => setModal(null)}>
+      <G2>
+        <Inp label="Código" value={form.codigo || ""} onChange={e => F({ codigo: e.target.value })} />
+        <Sel label="Tipo" value={form.tipo} onChange={e => F({ tipo: e.target.value })}>
+          <option value="acabado">Produto Acabado</option><option value="semiacabado">Semiacabado</option><option value="materia_prima">Matéria-Prima</option>
+        </Sel>
+        <Full><Inp label="Descrição" value={form.descricao || ""} onChange={e => F({ descricao: e.target.value })} /></Full>
+        <Inp label="Unidade" value={form.unidade || "UN"} onChange={e => F({ unidade: e.target.value })} />
+        <Inp label="Lead Time (dias)" type="number" value={form.lead_time_dias || 1} onChange={e => F({ lead_time_dias: e.target.value })} />
+        <Inp label="Preço de Venda (R$)" type="number" step="0.01" value={form.preco_venda || 0} onChange={e => F({ preco_venda: e.target.value })} />
+        <Inp label="Custo Padrão (R$)" type="number" step="0.01" value={form.custo_padrao || 0} onChange={e => F({ custo_padrao: e.target.value })} />
+        <Inp label="Estoque de Segurança" type="number" value={form.estoque_seguranca || 0} onChange={e => F({ estoque_seguranca: e.target.value })} />
+      </G2>
+      <MFoot onCancel={() => setModal(null)} onSave={async () => {
+        if (!form.codigo || !form.descricao) return showToast("Preencha código e descrição", "error");
+        setSaving(true);
+        const { error: e } = await dbIns("produtos", { ...form, preco_venda: Number(form.preco_venda || 0), custo_padrao: Number(form.custo_padrao || 0), lead_time_dias: Number(form.lead_time_dias || 1), estoque_seguranca: Number(form.estoque_seguranca || 0) });
+        e ? showToast("Erro: " + e.message, "error") : (showToast("Produto criado", "success"), await r1());
+        setSaving(false); setModal(null);
+      }} saving={saving} label="Criar Produto" />
+    </Modal>}
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VENDAS E EXPEDIÇÃO — Orçamentos, Pedidos de Venda, Expedição, Carteira
+// Cole antes de "// ── USUÁRIOS" no App.jsx
+// ═══════════════════════════════════════════════════════════════════════════
+
+const STATUS_ORCAMENTO = {
+  aberto: { label: "Aberto", color: C.amber, bg: C.amberLight },
+  aprovado: { label: "Aprovado", color: C.green, bg: C.greenLight },
+  recusado: { label: "Recusado", color: C.red, bg: C.redLight },
+  expirado: { label: "Expirado", color: C.muted, bg: "#F3F4F6" },
+  convertido: { label: "Convertido", color: C.purple, bg: C.purpleLight },
+};
+const STATUS_PEDIDO = {
+  novo: { label: "Novo", color: C.purple, bg: C.purpleLight },
+  em_producao: { label: "Em Produção", color: C.accent, bg: C.accentLight },
+  pronto_expedicao: { label: "Pronto p/ Expedição", color: C.teal, bg: C.tealLight },
+  faturado: { label: "Faturado", color: C.green, bg: C.greenLight },
+  entregue: { label: "Entregue", color: C.green, bg: C.greenLight },
+  cancelado: { label: "Cancelado", color: C.red, bg: C.redLight },
+};
+const STATUS_EXPED = {
+  aguardando: { label: "Aguardando", color: C.muted, bg: "#F3F4F6" },
+  separado: { label: "Separado", color: C.amber, bg: C.amberLight },
+  expedido: { label: "Expedido", color: C.accent, bg: C.accentLight },
+  entregue: { label: "Entregue", color: C.green, bg: C.greenLight },
+  devolvido: { label: "Devolvido", color: C.red, bg: C.redLight },
+};
+
+function ViewVendas({ showToast }) {
+  const { data: orcamentos, loading: l1, error: e1, reload: rOrc } = useTable("orcamentos");
+  const { data: pedidos, reload: rPed } = useTable("pedidos_venda");
+  const { data: expedicoes, reload: rExp } = useTable("expedicoes");
+  const { data: clientes } = useTable("clientes");
+  const { data: produtos } = useTable("produtos");
+
+  const [tab, setTab] = useState("pedidos");
+  const [modal, setModal] = useState(null);
+  const [form, setForm] = useState({});
+  const [itens, setItens] = useState([{ produto: "", qtd: 1, valor_unit: 0 }]);
+  const [saving, setSaving] = useState(false);
+  const F = v => setForm(f => ({ ...f, ...v }));
+
+  if (l1) return <Spinner />;
+  if (e1) return <ErrBox msg={e1} onRetry={rOrc} />;
+
+  const totalCarteira = pedidos.filter(p => !["faturado", "entregue", "cancelado"].includes(p.status)).reduce((s, p) => s + p.valor_total, 0);
+  const pedidosAtivos = pedidos.filter(p => !["entregue", "cancelado"].includes(p.status)).length;
+  const orcamentosAbertos = orcamentos.filter(o => o.status === "aberto").length;
+  const taxaConversao = orcamentos.length > 0 ? Math.round((orcamentos.filter(o => o.status === "convertido" || o.status === "aprovado").length / orcamentos.length) * 100) : 0;
+
+  function addItem() { setItens(p => [...p, { produto: "", qtd: 1, valor_unit: 0 }]); }
+  function removeItem(i) { setItens(p => p.filter((_, idx) => idx !== i)); }
+  function updateItem(i, field, val) { setItens(p => p.map((it, idx) => idx === i ? { ...it, [field]: val } : it)); }
+  const totalItens = itens.reduce((s, it) => s + (Number(it.qtd) || 0) * (Number(it.valor_unit) || 0), 0);
+
+  function openNewOrcamento() {
+    setForm({ status: "aberto", validade: "" });
+    setItens([{ produto: "", qtd: 1, valor_unit: 0 }]);
+    setModal("orcamento");
+  }
+  function openNewPedido() {
+    setForm({ status: "novo", data_pedido: TODAY, vendedor: "" });
+    setItens([{ produto: "", qtd: 1, valor_unit: 0 }]);
+    setModal("pedido");
+  }
+  function openNewExpedicao(pedido) {
+    setForm({ pedido_id: pedido.id, status: "aguardando", numero_romaneio: `ROM-${String(expedicoes.length + 1).padStart(4, "0")}` });
+    setModal("expedicao");
+  }
+
+  async function saveOrcamento() {
+    if (!form.cliente_id) return showToast("Selecione o cliente", "error");
+    setSaving(true);
+    const { error: e } = await dbIns("orcamentos", {
+      ...form,
+      cliente_id: Number(form.cliente_id),
+      numero: `ORC-${new Date().getFullYear()}-${String(orcamentos.length + 1).padStart(3, "0")}`,
+      itens: itens.map(it => ({ produto: it.produto, qtd: Number(it.qtd), valor_unit: Number(it.valor_unit) })),
+      valor_total: totalItens,
+    });
+    e ? showToast("Erro: " + e.message, "error") : (showToast("Orçamento criado", "success"), await rOrc());
+    setSaving(false); setModal(null);
+  }
+
+  async function saveCotacaoPedido() {
+    if (!form.cliente_id) return showToast("Selecione o cliente", "error");
+    setSaving(true);
+    const { error: e } = await dbIns("pedidos_venda", {
+      ...form,
+      cliente_id: Number(form.cliente_id),
+      numero: `PV-${new Date().getFullYear()}-${String(pedidos.length + 1).padStart(3, "0")}`,
+      itens: itens.map(it => ({ produto: it.produto, qtd: Number(it.qtd), valor_unit: Number(it.valor_unit) })),
+      valor_total: totalItens,
+    });
+    e ? showToast("Erro: " + e.message, "error") : (showToast("Pedido criado", "success"), await rPed());
+    setSaving(false); setModal(null);
+  }
+
+  async function saveExpedicao() {
+    setSaving(true);
+    const { error: e } = await dbIns("expedicoes", { ...form, pedido_id: Number(form.pedido_id) });
+    e ? showToast("Erro: " + e.message, "error") : (showToast("Expedição registrada", "success"), await rExp());
+    setSaving(false); setModal(null);
+  }
+
+  async function avancarStatusPedido(pedido, novoStatus) {
+    await dbUpd("pedidos_venda", pedido.id, { status: novoStatus });
+    showToast("Status atualizado", "success");
+    rPed();
+  }
+  async function avancarStatusExpedicao(exp, novoStatus) {
+    await dbUpd("expedicoes", exp.id, { status: novoStatus, data_entrega_real: novoStatus === "entregue" ? TODAY : null });
+    showToast("Status atualizado", "success");
+    rExp();
+  }
+  async function converterOrcamento(orc) {
+    if (!confirm(`Converter ${orc.numero} em Pedido de Venda?`)) return;
+    setSaving(true);
+    await dbIns("pedidos_venda", {
+      cliente_id: orc.cliente_id,
+      orcamento_id: orc.id,
+      numero: `PV-${new Date().getFullYear()}-${String(pedidos.length + 1).padStart(3, "0")}`,
+      data_pedido: TODAY,
+      status: "novo",
+      itens: orc.itens,
+      valor_total: orc.valor_total,
+    });
+    await dbUpd("orcamentos", orc.id, { status: "convertido" });
+    showToast("Orçamento convertido em pedido", "success");
+    await rOrc(); await rPed();
+    setSaving(false);
+  }
+
+  return <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 10 }}>
+      <KCard label="Carteira de Pedidos" value={fmtR(totalCarteira)} sub={`${pedidosAtivos} pedidos ativos`} color={C.accent} icon="📦" />
+      <KCard label="Orçamentos Abertos" value={orcamentosAbertos} color={C.amber} icon="📝" />
+      <KCard label="Taxa de Conversão" value={`${taxaConversao}%`} color={taxaConversao > 50 ? C.green : C.amber} icon="📈" />
+      <KCard label="Clientes na Carteira" value={[...new Set(pedidos.map(p => p.cliente_id))].length} color={C.text} icon="🏢" />
+    </div>
+
+    <Tabs tabs={[
+      { key: "pedidos", label: "Pedidos de Venda" },
+      { key: "orcamentos", label: "Orçamentos" },
+      { key: "expedicao", label: "Expedição" },
+      { key: "carteira", label: "Carteira de Clientes" },
+    ]} active={tab} onChange={setTab} />
+
+    {/* ── PEDIDOS DE VENDA ─────────────────────────────────────────── */}
+    {tab === "pedidos" && <>
+      <div style={{ display: "flex", justifyContent: "flex-end" }}><Btn onClick={openNewPedido}>+ Novo Pedido</Btn></div>
+      <Section title={`${pedidos.length} pedidos`}>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 900 }}>
+            <thead><tr><Th>Número</Th><Th>Cliente</Th><Th>Valor</Th><Th>Entrega Prevista</Th><Th>Status</Th><Th>Vendedor</Th><Th></Th></tr></thead>
+            <tbody>
+              {pedidos.map((p, i) => {
+                const cliente = clientes.find(c => c.id === p.cliente_id);
+                const s = STATUS_PEDIDO[p.status] || { label: p.status, color: C.muted, bg: "#F3F4F6" };
+                const proximoStatus = { novo: "em_producao", em_producao: "pronto_expedicao", pronto_expedicao: "faturado", faturado: "entregue" }[p.status];
+                return <tr key={p.id} style={{ borderTop: `1px solid ${C.border}`, background: i % 2 ? C.bg : C.surface }}>
+                  <Td><span style={{ fontWeight: 800, color: C.accent }}>{p.numero}</span></Td>
+                  <Td style={{ fontWeight: 600 }}>{cliente?.razao_social || "—"}</Td>
+                  <Td style={{ fontWeight: 700 }}>{fmtR(p.valor_total)}</Td>
+                  <Td style={{ color: C.muted, whiteSpace: "nowrap" }}>{fmtD(p.data_entrega_prevista)}</Td>
+                  <Td><span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 20, color: s.color, background: s.bg }}>{s.label}</span></Td>
+                  <Td style={{ color: C.muted }}>{p.vendedor || "—"}</Td>
+                  <Td>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {proximoStatus && <Btn size="sm" variant="success" onClick={() => avancarStatusPedido(p, proximoStatus)}>Avançar</Btn>}
+                      {p.status === "pronto_expedicao" && <Btn size="sm" variant="teal" onClick={() => openNewExpedicao(p)}>Expedir</Btn>}
+                    </div>
+                  </Td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+    </>}
+
+    {/* ── ORÇAMENTOS ───────────────────────────────────────────────── */}
+    {tab === "orcamentos" && <>
+      <div style={{ display: "flex", justifyContent: "flex-end" }}><Btn onClick={openNewOrcamento}>+ Novo Orçamento</Btn></div>
+      <Section title={`${orcamentos.length} orçamentos`}>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 800 }}>
+            <thead><tr><Th>Número</Th><Th>Cliente</Th><Th>Valor</Th><Th>Validade</Th><Th>Status</Th><Th></Th></tr></thead>
+            <tbody>
+              {orcamentos.map((o, i) => {
+                const cliente = clientes.find(c => c.id === o.cliente_id);
+                const s = STATUS_ORCAMENTO[o.status] || { label: o.status, color: C.muted, bg: "#F3F4F6" };
+                return <tr key={o.id} style={{ borderTop: `1px solid ${C.border}`, background: i % 2 ? C.bg : C.surface }}>
+                  <Td><span style={{ fontWeight: 800, color: C.accent }}>{o.numero}</span></Td>
+                  <Td style={{ fontWeight: 600 }}>{cliente?.razao_social || "—"}</Td>
+                  <Td style={{ fontWeight: 700 }}>{fmtR(o.valor_total)}</Td>
+                  <Td style={{ color: C.muted, whiteSpace: "nowrap" }}>{fmtD(o.validade)}</Td>
+                  <Td><span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 20, color: s.color, background: s.bg }}>{s.label}</span></Td>
+                  <Td>
+                    {(o.status === "aberto" || o.status === "aprovado") && <Btn size="sm" variant="success" onClick={() => converterOrcamento(o)}>Converter em Pedido</Btn>}
+                  </Td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+    </>}
+
+    {/* ── EXPEDIÇÃO ────────────────────────────────────────────────── */}
+    {tab === "expedicao" && <Section title={`${expedicoes.length} expedições`}>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 800 }}>
+          <thead><tr><Th>Romaneio</Th><Th>Pedido</Th><Th>Transportadora</Th><Th>Saída</Th><Th>Status</Th><Th>Rastreio</Th><Th></Th></tr></thead>
+          <tbody>
+            {expedicoes.map((ex, i) => {
+              const pedido = pedidos.find(p => p.id === ex.pedido_id);
+              const s = STATUS_EXPED[ex.status] || { label: ex.status, color: C.muted, bg: "#F3F4F6" };
+              const proximoStatus = { aguardando: "separado", separado: "expedido", expedido: "entregue" }[ex.status];
+              return <tr key={ex.id} style={{ borderTop: `1px solid ${C.border}`, background: i % 2 ? C.bg : C.surface }}>
+                <Td><span style={{ fontWeight: 700, color: C.accent }}>{ex.numero_romaneio}</span></Td>
+                <Td style={{ fontWeight: 600 }}>{pedido?.numero || "—"}</Td>
+                <Td style={{ color: C.muted }}>{ex.transportadora}</Td>
+                <Td style={{ color: C.muted, whiteSpace: "nowrap" }}>{fmtD(ex.data_saida)}</Td>
+                <Td><span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 20, color: s.color, background: s.bg }}>{s.label}</span></Td>
+                <Td style={{ color: C.muted, fontSize: 12 }}>{ex.rastreio || "—"}</Td>
+                <Td>{proximoStatus && <Btn size="sm" variant="success" onClick={() => avancarStatusExpedicao(ex, proximoStatus)}>Avançar</Btn>}</Td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Section>}
+
+    {/* ── CARTEIRA DE CLIENTES ─────────────────────────────────────── */}
+    {tab === "carteira" && <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {clientes.map(c => {
+        const pedidosCliente = pedidos.filter(p => p.cliente_id === c.id);
+        const totalComprado = pedidosCliente.filter(p => ["faturado", "entregue"].includes(p.status)).reduce((s, p) => s + p.valor_total, 0);
+        const emCarteira = pedidosCliente.filter(p => !["faturado", "entregue", "cancelado"].includes(p.status)).reduce((s, p) => s + p.valor_total, 0);
+        return <div key={c.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 15 }}>{c.razao_social}</div>
+            <div style={{ fontSize: 12, color: C.muted }}>{c.cnpj_cpf} · {pedidosCliente.length} pedido(s) no histórico</div>
+          </div>
+          <div style={{ display: "flex", gap: 24, textAlign: "right" }}>
+            <div><div style={{ fontSize: 11, color: C.muted }}>Total Faturado</div><div style={{ fontWeight: 800, color: C.green }}>{fmtR(totalComprado)}</div></div>
+            <div><div style={{ fontSize: 11, color: C.muted }}>Em Carteira</div><div style={{ fontWeight: 800, color: C.accent }}>{fmtR(emCarteira)}</div></div>
+          </div>
+        </div>;
+      })}
+    </div>}
+
+    {/* ── MODAIS ───────────────────────────────────────────────────── */}
+    {(modal === "orcamento" || modal === "pedido") && <Modal title={modal === "orcamento" ? "Novo Orçamento" : "Novo Pedido de Venda"} onClose={() => setModal(null)} width={700}>
+      <G2>
+        <Full><Sel label="Cliente" value={form.cliente_id || ""} onChange={e => F({ cliente_id: e.target.value })}>
+          <option value="">Selecione...</option>
+          {clientes.map(c => <option key={c.id} value={c.id}>{c.razao_social}</option>)}
+        </Sel></Full>
+        {modal === "orcamento" && <Inp label="Validade" type="date" value={form.validade || ""} onChange={e => F({ validade: e.target.value })} />}
+        {modal === "pedido" && <Inp label="Entrega Prevista" type="date" value={form.data_entrega_prevista || ""} onChange={e => F({ data_entrega_prevista: e.target.value })} />}
+        {modal === "pedido" && <Inp label="Vendedor" value={form.vendedor || ""} onChange={e => F({ vendedor: e.target.value })} />}
+      </G2>
+      <div style={{ marginTop: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase" }}>Itens</span>
+          <Btn size="sm" variant="ghost" onClick={addItem}>+ Item</Btn>
+        </div>
+        {itens.map((it, i) => <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr auto", gap: 8, marginBottom: 8, alignItems: "end" }}>
+          <Sel label="Produto" value={it.produto} onChange={e => updateItem(i, "produto", e.target.value)}>
+            <option value="">Selecione...</option>
+            {produtos.map(p => <option key={p.id} value={p.descricao}>{p.descricao}</option>)}
+          </Sel>
+          <Inp label="Qtd" type="number" value={it.qtd} onChange={e => updateItem(i, "qtd", e.target.value)} />
+          <Inp label="Valor Unit." type="number" step="0.01" value={it.valor_unit} onChange={e => updateItem(i, "valor_unit", e.target.value)} />
+          <Btn size="sm" variant="danger" onClick={() => removeItem(i)}>✕</Btn>
+        </div>)}
+        <div style={{ textAlign: "right", fontWeight: 800, fontSize: 16, marginTop: 8 }}>Total: {fmtR(totalItens)}</div>
+      </div>
+      <MFoot onCancel={() => setModal(null)} onSave={modal === "orcamento" ? saveOrcamento : saveCotacaoPedido} saving={saving} label="Criar" />
+    </Modal>}
+
+    {modal === "expedicao" && <Modal title="Registrar Expedição" onClose={() => setModal(null)}>
+      <G2>
+        <Inp label="Romaneio" value={form.numero_romaneio || ""} onChange={e => F({ numero_romaneio: e.target.value })} />
+        <Inp label="Transportadora" value={form.transportadora || ""} onChange={e => F({ transportadora: e.target.value })} />
+        <Inp label="Data de Saída" type="date" value={form.data_saida || TODAY} onChange={e => F({ data_saida: e.target.value })} />
+        <Inp label="Rastreio (opcional)" value={form.rastreio || ""} onChange={e => F({ rastreio: e.target.value })} />
+      </G2>
+      <MFoot onCancel={() => setModal(null)} onSave={saveExpedicao} saving={saving} label="Registrar" />
+    </Modal>}
+  </div>;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MARGEM DE CONTRIBUIÇÃO — Lucratividade por Produto
+// Cole antes de "// ── USUÁRIOS" no App.jsx
+// O Fluxo de Caixa, Contas a Pagar/Receber e Custos já existem no ViewFinanceiro
+// Este componente ADICIONA a aba "Margem" — substitua o ViewFinanceiro existente por este
+// ═══════════════════════════════════════════════════════════════════════════
+
+function ViewMargemContribuicao({ showToast }) {
+  const { data: margens, loading, error, reload } = useTable("margem_produto");
+  const { data: produtos } = useTable("produtos");
+  const [modal, setModal] = useState(false);
+  const [form, setForm] = useState({});
+  const [saving, setSaving] = useState(false);
+  const F = v => setForm(f => ({ ...f, ...v }));
+
+  if (loading) return <Spinner />;
+  if (error) return <ErrBox msg={error} onRetry={reload} />;
+
+  const dados = margens.map(m => {
+    const prod = produtos.find(p => p.id === m.produto_id);
+    return { ...m, produto: prod?.descricao || "—", codigo: prod?.codigo || "—" };
+  }).sort((a, b) => b.margem_contribuicao - a.margem_contribuicao);
+
+  const margemMedia = dados.length ? dados.reduce((s, d) => s + d.margem_percentual, 0) / dados.length : 0;
+  const totalContribuicao = dados.reduce((s, d) => s + d.margem_contribuicao * d.unidades_vendidas, 0);
+  const produtoMaisLucrativo = dados[0];
+  const produtoMenosLucrativo = dados[dados.length - 1];
+
+  async function save() {
+    if (!form.produto_id || !form.preco_venda) return showToast("Preencha produto e preço de venda", "error");
+    setSaving(true);
+    const { error: e } = await dbIns("margem_produto", {
+      ...form,
+      produto_id: Number(form.produto_id),
+      preco_venda: Number(form.preco_venda),
+      custo_variavel: Number(form.custo_variavel || 0),
+      custo_fixo_rateado: Number(form.custo_fixo_rateado || 0),
+      unidades_vendidas: Number(form.unidades_vendidas || 0),
+    });
+    e ? showToast("Erro: " + e.message, "error") : (showToast("Registro criado", "success"), await reload());
+    setSaving(false);
+    setModal(false);
+  }
+
+  return <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 10 }}>
+      <KCard label="Margem Média" value={`${margemMedia.toFixed(1)}%`} color={margemMedia > 30 ? C.green : C.amber} icon="📊" />
+      <KCard label="Contribuição Total" value={fmtR(totalContribuicao)} color={C.text} icon="💰" />
+      <KCard label="Mais Lucrativo" value={produtoMaisLucrativo?.codigo || "—"} sub={produtoMaisLucrativo ? `${produtoMaisLucrativo.margem_percentual.toFixed(0)}% margem` : ""} color={C.green} icon="🏆" />
+      <KCard label="Menos Lucrativo" value={produtoMenosLucrativo?.codigo || "—"} sub={produtoMenosLucrativo ? `${produtoMenosLucrativo.margem_percentual.toFixed(0)}% margem` : ""} color={C.amber} icon="⚠️" />
+    </div>
+
+    <div style={{ display: "flex", justifyContent: "flex-end" }}>
+      <Btn onClick={() => { setForm({}); setModal(true); }}>+ Novo Registro</Btn>
+    </div>
+
+    <Section title="Margem de Contribuição por Produto">
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 900 }}>
+          <thead><tr><Th>Produto</Th><Th>Preço Venda</Th><Th>Custo Variável</Th><Th>Custo Fixo Rat.</Th><Th>Margem (R$)</Th><Th>Margem (%)</Th><Th>Unid. Vendidas</Th><Th>Contribuição Total</Th></tr></thead>
+          <tbody>
+            {dados.map((d, i) => <tr key={d.id} style={{ borderTop: `1px solid ${C.border}`, background: i % 2 ? C.bg : C.surface }}>
+              <Td style={{ fontWeight: 700 }}>{d.produto}</Td>
+              <Td>{fmtR(d.preco_venda)}</Td>
+              <Td style={{ color: C.muted }}>{fmtR(d.custo_variavel)}</Td>
+              <Td style={{ color: C.muted }}>{fmtR(d.custo_fixo_rateado)}</Td>
+              <Td style={{ fontWeight: 800, color: d.margem_contribuicao > 0 ? C.green : C.red }}>{fmtR(d.margem_contribuicao)}</Td>
+              <Td>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontWeight: 800, color: d.margem_percentual > 30 ? C.green : d.margem_percentual > 15 ? C.amber : C.red, minWidth: 42 }}>{d.margem_percentual.toFixed(1)}%</span>
+                  <MiniBar val={d.margem_percentual} max={60} color={d.margem_percentual > 30 ? C.green : d.margem_percentual > 15 ? C.amber : C.red} h={6} />
+                </div>
+              </Td>
+              <Td style={{ color: C.muted }}>{fmt(d.unidades_vendidas)}</Td>
+              <Td style={{ fontWeight: 800 }}>{fmtR(d.margem_contribuicao * d.unidades_vendidas)}</Td>
+            </tr>)}
+          </tbody>
+        </table>
+      </div>
+    </Section>
+
+    <Section title="Ranking de Lucratividade (Pareto)">
+      <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+        {dados.map(d => <div key={d.id}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+            <span style={{ fontWeight: 600 }}>{d.produto}</span>
+            <span style={{ fontWeight: 700, color: C.accent }}>{fmtR(d.margem_contribuicao * d.unidades_vendidas)}</span>
+          </div>
+          <MiniBar val={d.margem_contribuicao * d.unidades_vendidas} max={Math.max(...dados.map(x => x.margem_contribuicao * x.unidades_vendidas), 1)} color={C.accent} />
+        </div>)}
+      </div>
+    </Section>
+
+    {modal && <Modal title="Novo Registro de Margem" onClose={() => setModal(false)}>
+      <G2>
+        <Full><Sel label="Produto" value={form.produto_id || ""} onChange={e => F({ produto_id: e.target.value })}>
+          <option value="">Selecione...</option>
+          {produtos.map(p => <option key={p.id} value={p.id}>{p.codigo} — {p.descricao}</option>)}
+        </Sel></Full>
+        <Inp label="Preço de Venda (R$)" type="number" step="0.01" value={form.preco_venda || ""} onChange={e => F({ preco_venda: e.target.value })} />
+        <Inp label="Custo Variável (R$)" type="number" step="0.01" value={form.custo_variavel || ""} onChange={e => F({ custo_variavel: e.target.value })} />
+        <Inp label="Custo Fixo Rateado (R$)" type="number" step="0.01" value={form.custo_fixo_rateado || ""} onChange={e => F({ custo_fixo_rateado: e.target.value })} />
+        <Inp label="Unidades Vendidas (período)" type="number" value={form.unidades_vendidas || ""} onChange={e => F({ unidades_vendidas: e.target.value })} />
+      </G2>
+      <MFoot onCancel={() => setModal(false)} onSave={save} saving={saving} label="Registrar" />
+    </Modal>}
+  </div>;
+}
+
 // ── USUÁRIOS ─────────────────────────────────────────────────────────────────
 function ViewUsuarios({user,setUser,showToast}) {
   const {data:users,loading,error,reload}=useTable("usuarios")
