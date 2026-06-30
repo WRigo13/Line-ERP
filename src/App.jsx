@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react"
-import { sb, EID, dbIns, dbUpd, dbDel } from "./supabase.js"
+import { sb, EID, dbIns, dbUpd, dbDel, signIn, signOut, getCurrentUser, podeAcessar } from "./supabase.js"
 import { exportExcel, exportPDF } from "./export.js"
 
 const C = {
@@ -928,7 +928,12 @@ function ViewPCP({ showToast }) {
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <Btn onClick={() => { setForm({ origem: "previsao", estoque_inicial: 0, demanda_prevista: 0, producao_planejada: 0 }); setModal("mps"); }}>+ Novo Plano</Btn>
       </div>
-      <Section title="Planejamento Agregado de Produção">
+      <Section title="Planejamento Agregado de Produção" action={<ExportBtns filename="plano-mestre-mps" title="Plano Mestre de Produção" columns={[
+        {label:"Produto",get:m=>produtos.find(p=>p.id===m.produto_id)?.descricao||"—"},{label:"Período",get:m=>fmtD(m.periodo)},
+        {label:"Demanda Prevista",get:m=>m.demanda_prevista},{label:"Estoque Inicial",get:m=>m.estoque_inicial},
+        {label:"Produção Planejada",get:m=>m.producao_planejada},{label:"Estoque Final",get:m=>m.estoque_final},
+        {label:"Origem",get:m=>m.origem==="pedido_firme"?"Pedido Firme":"Previsão"},
+      ]} rows={mps}/>}>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 800 }}>
             <thead><tr><Th>Produto</Th><Th>Período</Th><Th>Demanda Prevista</Th><Th>Estoque Inicial</Th><Th>Produção Planejada</Th><Th>Estoque Final</Th><Th>Origem</Th></tr></thead>
@@ -1442,7 +1447,12 @@ function ViewMargemContribuicao({ showToast }) {
       <Btn onClick={() => { setForm({}); setModal(true); }}>+ Novo Registro</Btn>
     </div>
 
-    <Section title="Margem de Contribuição por Produto">
+    <Section title="Margem de Contribuição por Produto" action={<ExportBtns filename="margem-contribuicao" title="Margem de Contribuição por Produto" columns={[
+      {label:"Produto",get:d=>d.produto},{label:"Preço Venda",get:d=>fmtR(d.preco_venda)},{label:"Custo Variável",get:d=>fmtR(d.custo_variavel)},
+      {label:"Custo Fixo",get:d=>fmtR(d.custo_fixo_rateado)},{label:"Margem (R$)",get:d=>fmtR(d.margem_contribuicao)},
+      {label:"Margem (%)",get:d=>`${d.margem_percentual.toFixed(1)}%`},{label:"Unid. Vendidas",get:d=>d.unidades_vendidas},
+      {label:"Contribuição Total",get:d=>fmtR(d.margem_contribuicao*d.unidades_vendidas)},
+    ]} rows={dados}/>}>
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 900 }}>
           <thead><tr><Th>Produto</Th><Th>Preço Venda</Th><Th>Custo Variável</Th><Th>Custo Fixo Rat.</Th><Th>Margem (R$)</Th><Th>Margem (%)</Th><Th>Unid. Vendidas</Th><Th>Contribuição Total</Th></tr></thead>
@@ -1548,19 +1558,81 @@ const NAV=[
 ]
 const GROUPS={geral:"Geral",producao:"Produção",suprimentos:"Suprimentos",gestao:"Gestão",config:"Config."}
 
+function ViewLogin({ onLogin }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError(null);
+    if (!email || !password) { setError("Preencha email e senha"); return; }
+    setLoading(true);
+    const result = await signIn(email, password);
+    setLoading(false);
+    if (result.error) { setError(result.error === "Invalid login credentials" ? "Email ou senha incorretos" : result.error); return; }
+    if (!result.user) { setError("Login feito, mas não há perfil de usuário vinculado. Contate o administrador."); return; }
+    onLogin(result.user);
+  }
+
+  return <div style={{
+    minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
+    background: `linear-gradient(135deg, ${C.navy} 0%, ${C.accent} 100%)`,
+    fontFamily: "Inter,system-ui,sans-serif", padding: 20,
+  }}>
+    <div style={{ background: C.surface, borderRadius: 18, padding: "40px 36px", width: "100%", maxWidth: 380, boxShadow: "0 24px 60px rgba(0,0,0,0.25)" }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 28 }}>
+        <svg viewBox="0 0 40 40" width="48" height="48" fill="none" style={{ marginBottom: 12 }}>
+          <path d="M20 3 L35 11.5 L35 28.5 L20 37 L5 28.5 L5 11.5 Z" stroke={C.accent} strokeWidth="2.2" strokeLinejoin="round" />
+          <path d="M14 13 L14 27 L14 20 L26 13 L26 27" stroke={C.accent} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+        </svg>
+        <div style={{ fontSize: 19, fontWeight: 900, color: C.text }}>Linha ERP</div>
+        <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Entre com sua conta</div>
+      </div>
+
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <Inp label="Email" type="email" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com.br" />
+        <Inp label="Senha" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" />
+
+        {error && <div style={{ background: C.redLight, border: `1px solid ${C.redMid}`, borderRadius: 8, padding: "10px 12px", fontSize: 13, color: C.red, fontWeight: 600 }}>{error}</div>}
+
+        <Btn sx={{ width: "100%", marginTop: 4, justifyContent: "center" }} disabled={loading} onClick={handleSubmit}>
+          {loading ? "Entrando..." : "Entrar"}
+        </Btn>
+      </form>
+
+      <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${C.border}`, fontSize: 12, color: C.muted, textAlign: "center" }}>
+        Esqueceu sua senha? Contate o administrador do sistema.
+      </div>
+    </div>
+  </div>;
+}
+
 export default function App() {
   const [page,setPage]=useState("dashboard")
   const [user,setUser]=useState(null)
+  const [authChecked,setAuthChecked]=useState(false)
   const [toast,setToast]=useState(null)
   const [open,setOpen]=useState(true)
 
   useEffect(()=>{
-    sb.from("usuarios").select("*").eq("empresa_id",EID).order("id",{ascending:true}).limit(1).then(({data})=>{if(data&&data.length>0)setUser(data[0])})
+    getCurrentUser().then(u=>{ setUser(u); setAuthChecked(true); })
+    const { data: listener } = sb.auth.onAuthStateChange((event)=>{
+      if(event==="SIGNED_OUT"){ setUser(null); setPage("dashboard"); }
+    })
+    return ()=>listener?.subscription?.unsubscribe()
   },[])
 
   function showToast(msg,type="info"){setToast({msg,type});setTimeout(()=>setToast(null),3200)}
+  async function handleLogout(){ await signOut(); setUser(null); }
+
   const W=open?220:56
-  const groups=[...new Set(NAV.map(n=>n.group))]
+  const navVisivel = user ? NAV.filter(n=>podeAcessar(user.permissao,n.id)) : []
+  const groups=[...new Set(navVisivel.map(n=>n.group))]
+
+  if(!authChecked) return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg}}><Spinner/></div>
+  if(!user) return <ViewLogin onLogin={setUser}/>
 
   return <div style={{display:"flex",minHeight:"100vh",background:C.bg,fontFamily:"Inter,system-ui,sans-serif",color:C.text}}>
     <style>{`*{box-sizing:border-box;margin:0;padding:0}@keyframes spin{to{transform:rotate(360deg)}}::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-thumb{background:${C.border};border-radius:3px}`}</style>
@@ -1577,7 +1649,7 @@ export default function App() {
       <nav style={{flex:1,padding:"8px",overflowY:"auto",display:"flex",flexDirection:"column",gap:1}}>
         {groups.map(g=><div key={g}>
           {open&&<div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.1em",padding:"10px 8px 3px"}}>{GROUPS[g]}</div>}
-          {NAV.filter(n=>n.group===g).map(n=><button key={n.id} onClick={()=>setPage(n.id)} style={{display:"flex",alignItems:"center",gap:9,padding:open?"8px 10px":"8px",justifyContent:open?"flex-start":"center",borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",background:page===n.id?"rgba(255,255,255,0.16)":"transparent",color:page===n.id?"#fff":"rgba(255,255,255,0.7)",fontWeight:page===n.id?700:500,fontSize:13,width:"100%",textAlign:"left",marginBottom:1}}>
+          {navVisivel.filter(n=>n.group===g).map(n=><button key={n.id} onClick={()=>setPage(n.id)} style={{display:"flex",alignItems:"center",gap:9,padding:open?"8px 10px":"8px",justifyContent:open?"flex-start":"center",borderRadius:8,border:"none",cursor:"pointer",fontFamily:"inherit",background:page===n.id?"rgba(255,255,255,0.16)":"transparent",color:page===n.id?"#fff":"rgba(255,255,255,0.7)",fontWeight:page===n.id?700:500,fontSize:13,width:"100%",textAlign:"left",marginBottom:1}}>
             <span style={{fontSize:15,flexShrink:0}}>{n.icon}</span>
             {open&&<span style={{whiteSpace:"nowrap"}}>{n.label}</span>}
           </button>)}
@@ -1588,7 +1660,10 @@ export default function App() {
           <div style={{width:28,height:28,borderRadius:"50%",background:"rgba(255,255,255,0.25)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,flexShrink:0}}>{user.avatar}</div>
           <div style={{overflow:"hidden",flex:1}}><div style={{fontSize:12,fontWeight:700,color:"#fff",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{user.nome?.split(" ")[0]}</div><div style={{fontSize:10,color:"rgba(255,255,255,0.6)"}}>{user.cargo}</div></div>
         </div>}
-        <button onClick={()=>setOpen(p=>!p)} style={{width:"100%",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,padding:"6px",cursor:"pointer",color:"rgba(255,255,255,0.8)",fontSize:13}}>{open?"◀":"▶"}</button>
+        <div style={{display:"flex",gap:6}}>
+          <button onClick={()=>setOpen(p=>!p)} style={{flex:1,background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,padding:"6px",cursor:"pointer",color:"rgba(255,255,255,0.8)",fontSize:13}}>{open?"◀":"▶"}</button>
+          {open&&<button onClick={handleLogout} title="Sair" style={{background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,padding:"6px 10px",cursor:"pointer",color:"rgba(255,255,255,0.8)",fontSize:13}}>⏻</button>}
+        </div>
       </div>
     </aside>
     <main style={{flex:1,minWidth:0,display:"flex",flexDirection:"column"}}>
@@ -1597,18 +1672,18 @@ export default function App() {
         {user&&<div style={{width:32,height:32,borderRadius:"50%",background:C.accent,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,cursor:"pointer"}} onClick={()=>setPage("usuarios")}>{user.avatar}</div>}
       </div>
       <div style={{padding:22,flex:1,overflowY:"auto"}}>
-        {page==="dashboard" &&<ViewDashboard user={user}/>}
-        {page==="ordens"    &&<ViewOrdens showToast={showToast}/>}
-        {page==="apontamentos"&&<ViewApontamentos showToast={showToast}/>}
-        {page==="oee"       &&<ViewOEE showToast={showToast}/>}
-        {page==="qualidade" &&<ViewQualidade showToast={showToast}/>}
-        {page==="estoque"   &&<ViewEstoque showToast={showToast}/>}
-        {page==="compras"   &&<ViewCompras showToast={showToast}/>}
-        {page==="financeiro"&&<ViewFinanceiro showToast={showToast}/>}
-        {page==="pcp"       &&<ViewPCP showToast={showToast}/>}
-        {page==="vendas"    &&<ViewVendas showToast={showToast}/>}
-        {page==="margem"    &&<ViewMargemContribuicao showToast={showToast}/>}
-        {page==="rh"        &&<ViewRH showToast={showToast}/>}
+        {page==="dashboard" && podeAcessar(user.permissao,"dashboard") &&<ViewDashboard user={user}/>}
+        {page==="ordens"    && podeAcessar(user.permissao,"ordens")    &&<ViewOrdens showToast={showToast}/>}
+        {page==="apontamentos"&& podeAcessar(user.permissao,"apontamentos")&&<ViewApontamentos showToast={showToast}/>}
+        {page==="oee"       && podeAcessar(user.permissao,"oee")       &&<ViewOEE showToast={showToast}/>}
+        {page==="qualidade" && podeAcessar(user.permissao,"qualidade") &&<ViewQualidade showToast={showToast}/>}
+        {page==="estoque"   && podeAcessar(user.permissao,"estoque")   &&<ViewEstoque showToast={showToast}/>}
+        {page==="compras"   && podeAcessar(user.permissao,"compras")   &&<ViewCompras showToast={showToast}/>}
+        {page==="financeiro"&& podeAcessar(user.permissao,"financeiro")&&<ViewFinanceiro showToast={showToast}/>}
+        {page==="pcp"       && podeAcessar(user.permissao,"pcp")       &&<ViewPCP showToast={showToast}/>}
+        {page==="vendas"    && podeAcessar(user.permissao,"vendas")    &&<ViewVendas showToast={showToast}/>}
+        {page==="margem"    && podeAcessar(user.permissao,"margem")    &&<ViewMargemContribuicao showToast={showToast}/>}
+        {page==="rh"        && podeAcessar(user.permissao,"rh")        &&<ViewRH showToast={showToast}/>}
         {page==="usuarios"  &&<ViewUsuarios user={user} setUser={setUser} showToast={showToast}/>}
       </div>
     </main>
