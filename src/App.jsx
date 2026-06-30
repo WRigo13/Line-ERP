@@ -74,13 +74,13 @@ const BarPct = ({val,max}) => {
 }
 const Stars = ({n}) => <span style={{color:C.amber}}>{Array.from({length:5},(_,i)=>i<n?"★":"☆").join("")}</span>
 const KCard = ({label,value,sub,color=C.text,icon,bg}) =>
-  <div style={{background:bg||C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"16px 18px",display:"flex",flexDirection:"column",gap:4,minWidth:0,overflow:"hidden"}}>
+  <div style={{background:bg||C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:"22px 24px",display:"flex",flexDirection:"column",gap:8,minWidth:0,overflow:"hidden"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
-      <span style={{fontSize:12,color:C.muted,fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{label}</span>
-      {icon&&<span style={{fontSize:16,flexShrink:0}}>{icon}</span>}
+      <span style={{fontSize:12,color:C.muted,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{label}</span>
+      {icon&&<span style={{fontSize:18,flexShrink:0}}>{icon}</span>}
     </div>
-    <div style={{fontSize:"clamp(15px,2.1vw,24px)",fontWeight:800,color,lineHeight:1.15,overflowWrap:"break-word",wordBreak:"break-word"}}>{value}</div>
-    {sub&&<div style={{fontSize:11,color:C.muted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</div>}
+    <div style={{fontSize:"clamp(20px,2.6vw,32px)",fontWeight:800,color,lineHeight:1.1,overflowWrap:"break-word",wordBreak:"break-word"}}>{value}</div>
+    {sub&&<div style={{fontSize:12,color:C.muted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</div>}
   </div>
 const Spinner = () =>
   <div style={{display:"flex",alignItems:"center",justifyContent:"center",padding:48,flexDirection:"column",gap:12}}>
@@ -178,10 +178,10 @@ function ViewDashboard({user}) {
   return <div style={{display:"flex",flexDirection:"column",gap:18}}>
     <div style={{background:`linear-gradient(135deg,${C.navy},${C.accent})`,borderRadius:14,padding:"20px 28px",color:"#fff",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
       <div><div style={{fontSize:20,fontWeight:800,marginBottom:4}}>Bom dia, {user?.nome?.split(" ")[0]||"Usuário"} 👋</div><div style={{fontSize:13,opacity:.8}}>{fmtD(TODAY)} · MetalTech Indústria · Betim/MG</div></div>
-      <div style={{textAlign:"right"}}><div style={{fontSize:12,opacity:.8}}>Saldo projetado</div><div style={{fontSize:22,fontWeight:800}}>{fmtR(totalReceber-totalPagar)}</div></div>
+      <div style={{textAlign:"right"}}><div style={{fontSize:12,opacity:.8,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:600}}>Saldo Projetado</div><div style={{fontSize:30,fontWeight:800}}>{fmtR(totalReceber-totalPagar)}</div></div>
     </div>
     <div style={{fontSize:12,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:"0.08em"}}>Visão Geral</div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10}}>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:14}}>
       <KCard label="Em Produção" value={emProd} sub={`${ordens.length} total`} color={C.accent} icon="📋"/>
       <KCard label="Atrasadas" value={atrasadas} color={atrasadas>0?C.red:C.green} icon="⚠️" bg={atrasadas>0?C.redLight:C.surface}/>
       <KCard label="Eficiência" value={`${efGeral}%`} color={efGeral>80?C.red:C.green} icon="⚙️"/>
@@ -304,7 +304,7 @@ function ViewFinanceiro({showToast}) {
   async function saveReceber(){if(!form.descricao||!form.valor)return showToast("Preencha descrição e valor","error");setSaving(true);const{error:e}=await dbIns("contas_receber",{...form,valor:Number(form.valor),status:"aberta"});e?showToast("Erro: "+e.message,"error"):(showToast("Criada","success"),await rr());setSaving(false);setModal(null)}
   async function marcarPago(id,tipo){await dbUpd(tipo==="pagar"?"contas_pagar":"contas_receber",id,{status:tipo==="pagar"?"paga":"recebida",data_pagamento:TODAY});showToast("Marcado","success");tipo==="pagar"?rp():rr()}
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:10}}>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:14}}>
       <KCard label="A Receber" value={fmtR(totalReceber)} color={C.green} icon="📥"/><KCard label="A Pagar" value={fmtR(totalPagar)} color={C.red} icon="📤"/>
       <KCard label="Saldo Projetado" value={fmtR(saldo)} color={saldo>=0?C.green:C.red} icon="💰"/>
       <KCard label="Vencido" value={fmtR(vencidoPagar)} color={vencidoPagar>0?C.red:C.green} icon="⚠️" bg={vencidoPagar>0?C.redLight:C.surface}/>
@@ -392,7 +392,7 @@ function ViewApontamentos({showToast}){
   async function save(){if(!form.op||!form.quantidade)return showToast("Preencha OP e quantidade","error");setSaving(true);const{error:e}=await dbIns("apontamentos",{...form,quantidade:Number(form.quantidade),refugo:Number(form.refugo||0),data:TODAY});e?showToast("Erro: "+e.message,"error"):(showToast("Registrado","success"),await reload());setSaving(false);setModal(false);setForm({turno:"manhã",refugo:0});}
   if(loading)return <Spinner/>;if(error)return <ErrBox msg={error} onRetry={reload}/>;
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:10}}>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:14}}>
       <KCard label="Produzido Hoje" value={fmt(prodHoje)} sub="peças" color={C.accent} icon="📦"/>
       <KCard label="Refugo Hoje" value={refugoHoje} color={refugoHoje>5?C.amber:C.green} icon="🗑️"/>
       <KCard label="Taxa de Refugo" value={prodHoje>0?`${((refugoHoje/prodHoje)*100).toFixed(1)}%`:"—"} color={C.text} icon="📊"/>
@@ -499,7 +499,7 @@ function ViewEstoque({showToast}){
   const sSaldo=e=>{if(e.saldo<=e.minimo)return{l:"Crítico",c:C.red,bg:C.redLight};if(e.saldo>=e.maximo*.9)return{l:"Excesso",c:C.amber,bg:C.amberLight};return{l:"OK",c:C.green,bg:C.greenLight};};
   if(loading)return <Spinner/>;if(error)return <ErrBox msg={error} onRetry={reload}/>;
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:10}}>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:14}}>
       <KCard label="Itens" value={estoque.length} color={C.text} icon="📦"/>
       <KCard label="Alertas" value={alertas.length} color={alertas.length>0?C.red:C.green} icon="⚠️" bg={alertas.length>0?C.redLight:C.surface}/>
       <KCard label="Valor Total" value={fmtR(valorTotal)} color={C.text} icon="💰"/>
@@ -577,7 +577,7 @@ function ViewQualidade({showToast}){
   async function save(){if(!form.op)return showToast("Selecione uma OP","error");setSaving(true);const{error:e}=await dbIns("qualidade",{...form,qtd_insp:Number(form.qtd_insp||0),nc:Number(form.nc||0),data:TODAY});e?showToast("Erro: "+e.message,"error"):(showToast("Registrado","success"),await reload());setSaving(false);setModal(false);setForm({resultado:"aprovado",nc:0});}
   if(loading)return <Spinner/>;if(error)return <ErrBox msg={error} onRetry={reload}/>;
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:10}}>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:14}}>
       <KCard label="Total Inspecionado" value={fmt(totalInsp)} color={C.text} icon="🔍"/>
       <KCard label="Aprovadas" value={qualidade.filter(q=>q.resultado==="aprovado").length} color={C.green} icon="✅"/>
       <KCard label="Reprovadas" value={qualidade.filter(q=>q.resultado==="reprovado").length} color={qualidade.filter(q=>q.resultado==="reprovado").length>0?C.red:C.green} icon="❌"/>
@@ -634,7 +634,7 @@ function ViewCompras({showToast}){
   async function updatePedStatus(id,status){await dbUpd("pedidos_compra",id,{status,data_recebimento:status==="recebido"?TODAY:null});showToast("Status atualizado","success");rp();}
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:10}}>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:14}}>
       <KCard label="Pedidos Abertos" value={pedidosAbertos.length} color={C.teal} icon="🛒"/>
       <KCard label="Valor em Aberto" value={fmtR(valorEmAberto)} color={C.text} icon="💰"/>
       <KCard label="Requisições" value={reqAbertas} sub="aguardando aprovação" color={reqAbertas>0?C.amber:C.green} icon="📋"/>
@@ -755,7 +755,7 @@ function ViewRH({showToast}){
   const horasPorFunc=funcs.map(f=>{const pts=pontos.filter(p=>p.funcionario_id===f.id);const total=pts.reduce((s,p)=>s+(p.horas_trabalhadas||0),0);const extras=pts.reduce((s,p)=>s+(p.horas_extras||0),0);return{...f,total_horas:total,total_extras:extras,dias:pts.length};});
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:10}}>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:14}}>
       <KCard label="Funcionários Ativos" value={funcsAtivos} sub={`de ${funcs.length} total`} color={C.text} icon="👤"/>
       <KCard label="Folha Mensal" value={fmtR(folhaMensal)} sub="salários base" color={C.text} icon="💰"/>
       <KCard label="Pontos Hoje" value={pontosHoje} sub="registros" color={C.accent} icon="🕐"/>
@@ -909,7 +909,7 @@ function ViewPCP({ showToast }) {
   }
 
   return <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 10 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 14 }}>
       <KCard label="Produtos Cadastrados" value={produtos.length} color={C.text} icon="📦" />
       <KCard label="Planos MPS Ativos" value={mps.length} color={C.accent} icon="📅" />
       <KCard label="Itens MRP Críticos" value={totalNecessidadesCriticas} color={totalNecessidadesCriticas > 0 ? C.red : C.green} icon="⚠️" bg={totalNecessidadesCriticas > 0 ? C.redLight : C.surface} />
@@ -1229,7 +1229,7 @@ function ViewVendas({ showToast }) {
   }
 
   return <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 10 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 14 }}>
       <KCard label="Carteira de Pedidos" value={fmtR(totalCarteira)} sub={`${pedidosAtivos} pedidos ativos`} color={C.accent} icon="📦" />
       <KCard label="Orçamentos Abertos" value={orcamentosAbertos} color={C.amber} icon="📝" />
       <KCard label="Taxa de Conversão" value={`${taxaConversao}%`} color={taxaConversao > 50 ? C.green : C.amber} icon="📈" />
@@ -1436,7 +1436,7 @@ function ViewMargemContribuicao({ showToast }) {
   }
 
   return <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 10 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 14 }}>
       <KCard label="Margem Média" value={`${margemMedia.toFixed(1)}%`} color={margemMedia > 30 ? C.green : C.amber} icon="📊" />
       <KCard label="Contribuição Total" value={fmtR(totalContribuicao)} color={C.text} icon="💰" />
       <KCard label="Mais Lucrativo" value={produtoMaisLucrativo?.codigo || "—"} sub={produtoMaisLucrativo ? `${produtoMaisLucrativo.margem_percentual.toFixed(0)}% margem` : ""} color={C.green} icon="🏆" />
