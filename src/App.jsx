@@ -1521,6 +1521,9 @@ const NAV=[
   {id:"financeiro",  label:"Financeiro",    icon:"💰", group:"gestao"},
   {id:"rh",          label:"RH / Ponto",    icon:"👤", group:"gestao"},
   {id:"usuarios",    label:"Usuários",      icon:"🔐", group:"config"},
+  {id:"pcp",      label:"PCP Avançado",  icon:"🏭", group:"producao"},
+  {id:"vendas",   label:"Vendas",        icon:"📈", group:"gestao"},
+  {id:"margem",   label:"Margem",        icon:"📊", group:"gestao"},
 ]
 const GROUPS={geral:"Geral",producao:"Produção",suprimentos:"Suprimentos",gestao:"Gestão",config:"Config."}
 
@@ -1578,6 +1581,9 @@ export default function App() {
         {page==="financeiro"&&<ViewFinanceiro showToast={showToast}/>}
         {page==="rh"        &&<ViewRH showToast={showToast}/>}
         {page==="usuarios"  &&<ViewUsuarios user={user} setUser={setUser} showToast={showToast}/>}
+        {page==="pcp"     && <ViewPCP showToast={showToast}/>}
+        {page==="vendas"  && <ViewVendas showToast={showToast}/>}
+        {page==="margem"  && <ViewMargemContribuicao showToast={showToast}/>}
       </div>
     </main>
     {toast&&<Toast msg={toast.msg} type={toast.type}/>}
