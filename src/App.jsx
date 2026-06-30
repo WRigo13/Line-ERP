@@ -809,7 +809,6 @@ function ViewRH({showToast}){
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PCP AVANÇADO — Plano Mestre (MPS), MRP, Capacidade Planejada
-// Cole antes de "// ── USUÁRIOS" no App.jsx
 // ═══════════════════════════════════════════════════════════════════════════
 
 function ViewPCP({ showToast }) {
@@ -1072,7 +1071,6 @@ function ViewPCP({ showToast }) {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // VENDAS E EXPEDIÇÃO — Orçamentos, Pedidos de Venda, Expedição, Carteira
-// Cole antes de "// ── USUÁRIOS" no App.jsx
 // ═══════════════════════════════════════════════════════════════════════════
 
 const STATUS_ORCAMENTO = {
@@ -1367,9 +1365,6 @@ function ViewVendas({ showToast }) {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MARGEM DE CONTRIBUIÇÃO — Lucratividade por Produto
-// Cole antes de "// ── USUÁRIOS" no App.jsx
-// O Fluxo de Caixa, Contas a Pagar/Receber e Custos já existem no ViewFinanceiro
-// Este componente ADICIONA a aba "Margem" — substitua o ViewFinanceiro existente por este
 // ═══════════════════════════════════════════════════════════════════════════
 
 function ViewMargemContribuicao({ showToast }) {
@@ -1519,11 +1514,11 @@ const NAV=[
   {id:"estoque",     label:"Estoque MP",    icon:"📦", group:"suprimentos"},
   {id:"compras",     label:"Compras",       icon:"🛒", group:"suprimentos"},
   {id:"financeiro",  label:"Financeiro",    icon:"💰", group:"gestao"},
+  {id:"pcp",         label:"PCP Avançado",  icon:"🏭", group:"producao"},
+  {id:"vendas",      label:"Vendas",        icon:"📈", group:"gestao"},
+  {id:"margem",      label:"Margem",        icon:"📊", group:"gestao"},
   {id:"rh",          label:"RH / Ponto",    icon:"👤", group:"gestao"},
   {id:"usuarios",    label:"Usuários",      icon:"🔐", group:"config"},
-  {id:"pcp",      label:"PCP Avançado",  icon:"🏭", group:"producao"},
-  {id:"vendas",   label:"Vendas",        icon:"📈", group:"gestao"},
-  {id:"margem",   label:"Margem",        icon:"📊", group:"gestao"},
 ]
 const GROUPS={geral:"Geral",producao:"Produção",suprimentos:"Suprimentos",gestao:"Gestão",config:"Config."}
 
@@ -1579,11 +1574,11 @@ export default function App() {
         {page==="estoque"   &&<ViewEstoque showToast={showToast}/>}
         {page==="compras"   &&<ViewCompras showToast={showToast}/>}
         {page==="financeiro"&&<ViewFinanceiro showToast={showToast}/>}
+        {page==="pcp"       &&<ViewPCP showToast={showToast}/>}
+        {page==="vendas"    &&<ViewVendas showToast={showToast}/>}
+        {page==="margem"    &&<ViewMargemContribuicao showToast={showToast}/>}
         {page==="rh"        &&<ViewRH showToast={showToast}/>}
         {page==="usuarios"  &&<ViewUsuarios user={user} setUser={setUser} showToast={showToast}/>}
-        {page==="pcp"     && <ViewPCP showToast={showToast}/>}
-        {page==="vendas"  && <ViewVendas showToast={showToast}/>}
-        {page==="margem"  && <ViewMargemContribuicao showToast={showToast}/>}
       </div>
     </main>
     {toast&&<Toast msg={toast.msg} type={toast.type}/>}
