@@ -483,7 +483,7 @@ function ViewRH({showToast}) {
           <Td style={{color:C.muted}}>{fmtD(p.data)}</Td><Td style={{fontWeight:700}}>{f?.nome||"—"}</Td>
           <Td style={{color:C.green,fontWeight:600}}>{p.entrada||"—"}</Td><Td style={{color:C.red,fontWeight:600}}>{p.saida||"—"}</Td>
           <Td><span style={{color:p.horas_extras>0?C.amber:C.muted,fontWeight:700}}>{p.horas_extras>0?`+${p.horas_extras}h`:"—"}</span></Td>
-        </tr>)})</tbody>
+        </tr>})}</tbody>
       </table></div></Section></>}
     {modal==="func"&&<Modal title="Novo Funcionário" onClose={()=>setModal(null)}>
       <G2><Full><Inp label="Nome Completo" value={form.nome||""} onChange={e=>F({nome:e.target.value})}/></Full>
